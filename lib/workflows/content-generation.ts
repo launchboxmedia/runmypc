@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { scrapeNicheContent } from '@/lib/apify'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendMessage, buildStepUpdateMessage } from '@/lib/telegram'
 
 let anthropic: Anthropic
 let openai: OpenAI
@@ -32,6 +33,26 @@ async function updateStep(
     .eq('step_key', stepKey)
 }
 
+async function notifyStep(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  stepLabel: string,
+  phase: string
+) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('telegram_chat_id')
+    .eq('id', userId)
+    .single()
+
+  if (profile?.telegram_chat_id) {
+    await sendMessage(
+      profile.telegram_chat_id,
+      buildStepUpdateMessage(stepLabel, phase)
+    ).catch(() => {})
+  }
+}
+
 export async function executeContentGeneration(jobId: string) {
   const supabase = createAdminClient()
 
@@ -46,6 +67,8 @@ export async function executeContentGeneration(jobId: string) {
       .single()
 
     if (!job) throw new Error('Job not found')
+
+    await notifyStep(supabase, job.user_id, 'Researching top-performing content', 'content_generation')
 
     // Fetch user profile for brand context
     const { data: profile } = await supabase
@@ -176,6 +199,7 @@ Terms should be specific keywords that would find relevant content on Instagram,
 
     // Step 2: Generate social copy
     await updateStep(supabase, jobId, 'generate-social-copy', 'running')
+    await notifyStep(supabase, job.user_id, 'Writing social media posts', 'content_generation')
 
     const contentSummary = nicheContent.slice(0, 5)
       .map((item: Record<string, unknown>) => JSON.stringify(item))
@@ -258,6 +282,7 @@ Respond ONLY with JSON:
 
     // Step 3: Generate static creatives
     await updateStep(supabase, jobId, 'generate-static-creatives', 'running')
+    await notifyStep(supabase, job.user_id, 'Creating static visuals', 'content_generation')
 
     const creativePrompts = [
       {
@@ -322,6 +347,7 @@ Respond ONLY with JSON:
 
     // Step 4: Generate Remotion videos
     await updateStep(supabase, jobId, 'generate-remotion-videos', 'running')
+    await notifyStep(supabase, job.user_id, 'Rendering social videos', 'content_generation')
 
     try {
       // Get generated social posts
@@ -427,6 +453,7 @@ Respond ONLY with JSON:
 
     // Step 5: Generate cinematic video
     await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
+    await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 
     try {
       const { generateVideo } = await import('@/lib/atlascloud')

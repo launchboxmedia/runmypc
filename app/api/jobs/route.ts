@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { executeBookGeneration } from '@/lib/workflows/book-generation'
 import { executeContentGeneration } from '@/lib/workflows/content-generation'
 import { executeAdGeneration } from '@/lib/workflows/ad-generation'
+import { sendMessage, buildJobCompleteMessage, buildJobFailedMessage } from '@/lib/telegram'
 import { checkRateLimit } from '@/lib/rateLimit'
 
 const BOOK_STEPS = [
@@ -27,9 +28,10 @@ const BOOK_STEPS = [
 ]
 
 async function runWorkflowsSequentially(jobId: string) {
+  const supabase = createAdminClient()
+
   try {
-    const supabase = createAdminClient()
-    const { data: job } = await supabase.from('jobs').select('mode').eq('id', jobId).single()
+    const { data: job } = await supabase.from('jobs').select('mode, user_id, topic').eq('id', jobId).single()
     if (!job) throw new Error('Job not found')
 
     const mode = job.mode
@@ -44,16 +46,83 @@ async function runWorkflowsSequentially(jobId: string) {
     if (mode === 'full_run' || mode === 'ads_only') {
       await executeAdGeneration(jobId)
     }
+
+    // Mark job as completed
+    await supabase.from('jobs').update({ status: 'completed' }).eq('id', jobId)
+
+    // Send Telegram completion notification
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('telegram_chat_id')
+      .eq('id', job.user_id)
+      .single()
+
+    if (profile?.telegram_chat_id) {
+      const { data: completedJob } = await supabase
+        .from('jobs')
+        .select('*, job_outputs(*)')
+        .eq('id', jobId)
+        .single()
+
+      if (completedJob) {
+        await sendMessage(
+          profile.telegram_chat_id,
+          buildJobCompleteMessage(completedJob)
+        ).catch(() => {})
+      }
+    }
+
   } catch (error) {
     console.error('Workflow execution failed:', error)
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    await supabase.from('jobs').update({
+      status: 'failed',
+      error: errorMessage
+    }).eq('id', jobId)
+
+    // Send Telegram failure notification
+    const { data: job } = await supabase
+      .from('jobs')
+      .select('user_id, topic, error')
+      .eq('id', jobId)
+      .single()
+
+    if (job) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('telegram_chat_id')
+        .eq('id', job.user_id)
+        .single()
+
+      if (profile?.telegram_chat_id) {
+        await sendMessage(
+          profile.telegram_chat_id,
+          buildJobFailedMessage({ topic: job.topic, error: job.error })
+        ).catch(() => {})
+      }
+    }
   }
 }
 
 export async function POST(req: Request) {
   const supabase = await createClient()
+  let userId: string
+
+  // Check session auth first
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const userId = user.id
+
+  if (user) {
+    userId = user.id
+  } else {
+    // Fall back to Telegram user ID header
+    const telegramUserId = req.headers.get('x-telegram-user-id')
+    if (telegramUserId) {
+      userId = telegramUserId
+    } else {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
 
   // Rate limit check
   const rateLimitResult = await checkRateLimit(userId)
@@ -123,6 +192,27 @@ export async function POST(req: Request) {
       status: 'pending'
     }))
   )
+
+  // Send Telegram start notification
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('telegram_chat_id')
+    .eq('id', userId)
+    .single()
+
+  if (profile?.telegram_chat_id) {
+    await sendMessage(
+      profile.telegram_chat_id,
+      `🚀 <b>Campaign Started</b>
+
+<b>Topic:</b> ${topic}
+<b>Mode:</b> ${mode.replace(/_/g, ' ').toUpperCase()}
+
+Agents are working... I'll update you at each step.
+
+<a href="${process.env.NEXT_PUBLIC_APP_URL}/jobs/${job.id}">View Live Canvas →</a>`
+    ).catch(() => {})
+  }
 
   // Start workflow execution in background
   runWorkflowsSequentially(job.id)
