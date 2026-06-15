@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "atlas-cloud": {
+      "source": "AtlasCloudAI/atlas-cloud-skills",
+      "sourceType": "github",
+      "skillPath": "atlas-cloud/SKILL.md",
+      "computedHash": "e9bba0bc06c5b5375642b28e8e105d994f356aa0a093f6fd9ed2dffbb61fcf77"
+    }
+  }
+}
