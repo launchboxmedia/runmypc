@@ -4,14 +4,15 @@ let stripeInstance: Stripe | null = null
 
 export function getStripe(): Stripe {
   if (!stripeInstance) {
-    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY not set')
+    }
+    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY, {
       apiVersion: '2026-05-27.dahlia'
     })
   }
   return stripeInstance
 }
-
-export const stripe = getStripe()
 
 export const PLANS = {
   basic: {
