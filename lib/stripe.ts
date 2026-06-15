@@ -1,8 +1,17 @@
 import Stripe from 'stripe'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-05-27.dahlia'
-})
+let stripeInstance: Stripe | null = null
+
+export function getStripe(): Stripe {
+  if (!stripeInstance) {
+    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-05-27.dahlia'
+    })
+  }
+  return stripeInstance
+}
+
+export const stripe = getStripe()
 
 export const PLANS = {
   basic: {
@@ -39,7 +48,8 @@ export async function createCheckoutSession(params: {
   successUrl: string
   cancelUrl: string
 }): Promise<string> {
-  const { userId, email, priceId, successUrl, cancelUrl } = params
+  const { userId, email, priceId, successUrl, cancelUrl} = params
+  const stripe = getStripe()
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -55,6 +65,7 @@ export async function createCheckoutSession(params: {
 }
 
 export async function createBillingPortalSession(customerId: string, returnUrl: string): Promise<string> {
+  const stripe = getStripe()
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: returnUrl
