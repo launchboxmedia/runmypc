@@ -14,33 +14,37 @@ export function getStripe(): Stripe {
   return stripeInstance
 }
 
-export const PLANS = {
-  basic: {
-    name: 'Basic',
-    price: process.env.STRIPE_PRICE_BASIC_MONTHLY!,
-    jobsPerDay: 3,
-    features: [
-      'Content Only & Ads Only modes',
-      'Instagram, TikTok, YouTube, LinkedIn',
-      '3 campaigns per day',
-      'Remotion videos',
-      'Telegram notifications'
-    ]
-  },
-  pro: {
-    name: 'Pro',
-    price: process.env.STRIPE_PRICE_PRO_MONTHLY!,
-    jobsPerDay: 5,
-    features: [
-      'All modes including Full Run',
-      'FlipBookPro ebook generation',
-      '5 campaigns per day',
-      'Atlas Cloud cinematic video',
-      'Content & Ad refinement loops',
-      'Priority processing'
-    ]
+export function getPlans() {
+  return {
+    basic: {
+      name: 'Basic',
+      price: process.env.STRIPE_PRICE_BASIC_MONTHLY!,
+      jobsPerDay: 3,
+      features: [
+        'Content Only & Ads Only modes',
+        'Instagram, TikTok, YouTube, LinkedIn',
+        '3 campaigns per day',
+        'Remotion videos',
+        'Telegram notifications'
+      ]
+    },
+    pro: {
+      name: 'Pro',
+      price: process.env.STRIPE_PRICE_PRO_MONTHLY!,
+      jobsPerDay: 5,
+      features: [
+        'All modes including Full Run',
+        'FlipBookPro ebook generation',
+        '5 campaigns per day',
+        'Atlas Cloud cinematic video',
+        'Content & Ad refinement loops',
+        'Priority processing'
+      ]
+    }
   }
 }
+
+export const PLANS = getPlans()
 
 export async function createCheckoutSession(params: {
   userId: string

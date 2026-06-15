@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCheckoutSession, PLANS } from '@/lib/stripe'
+import { createCheckoutSession, getPlans } from '@/lib/stripe'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -8,6 +8,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { plan } = await req.json()
+  const PLANS = getPlans()
   const planConfig = PLANS[plan as keyof typeof PLANS]
   if (!planConfig) return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
 
