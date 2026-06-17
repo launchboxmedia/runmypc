@@ -47,8 +47,7 @@ export function ResearchSection({ outputs, isActive }: Props) {
     data = JSON.parse(researchOutput.content || '{}')
   } catch {}
 
-  const { instagram, tiktok, youtube, linkedin, synthesis } = data
-  const searchTerms = researchOutput.metadata?.search_terms || ''
+  const { winning_angle, score, top_3_angles, what_is_working, search_trends, top_performers, platforms_analyzed } = data
 
   if (!expanded) {
     return (
@@ -62,11 +61,14 @@ export function ResearchSection({ outputs, isActive }: Props) {
               <span className="text-green-400 text-sm">✓</span>
               <div>
                 <p className="text-sm text-gray-300">
-                  Research Complete — Instagram ({instagram?.count || 0}) · TikTok ({tiktok?.count || 0}) · YouTube ({youtube?.count || 0}) · LinkedIn ({linkedin?.count || 0})
+                  Research Complete — Winning angle selected (Score: {score || 0}/100)
                 </p>
-                {searchTerms && (
+                <p className="text-xs text-[#E8622A] mt-1 font-medium">
+                  "{winning_angle || 'Analyzing...'}"
+                </p>
+                {platforms_analyzed && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Searched: {searchTerms}
+                    Instagram ({platforms_analyzed.instagram || 0}) · TikTok ({platforms_analyzed.tiktok || 0}) · YouTube ({platforms_analyzed.youtube || 0}) · LinkedIn ({platforms_analyzed.linkedin || 0}) · ↓ expand
                   </p>
                 )}
               </div>
@@ -82,90 +84,136 @@ export function ResearchSection({ outputs, isActive }: Props) {
 
   return (
     <div className="mb-8 p-6 bg-gray-950 border border-gray-800 rounded-lg">
-      {searchTerms && (
-        <div className="mb-4 pb-4 border-b border-gray-800">
-          <p className="text-xs text-gray-500">
-            Search terms used: {searchTerms.split(', ').map((term: string, i: number) => (
-              <span key={i}>
-                {i > 0 && ' · '}
-                <span className="text-gray-400">{term}</span>
-              </span>
-            ))}
+
+      {/* Winning Angle */}
+      <div className="mb-6 p-4 bg-gradient-to-r from-[#E8622A]/20 to-transparent border-l-4 border-[#E8622A] rounded">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
+          WINNING ANGLE
+        </p>
+        <p className="text-lg text-white font-bold mb-1">
+          "{winning_angle}" — Score {score}/100
+        </p>
+        {data.winning_angle_why && (
+          <p className="text-sm text-gray-400 mt-2">
+            {data.winning_angle_why}
           </p>
-        </div>
-      )}
-      <div className="space-y-4 mb-6">
-        {instagram?.top_performer && (
-          <div>
-            <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-2">
-              📱 Instagram — {instagram.count} posts analyzed
-            </p>
-            <p className="text-sm text-white mb-1">
-              Top: "{instagram.top_performer.caption?.substring(0, 80)}{instagram.top_performer.caption?.length > 80 ? '...' : ''}"
-            </p>
-            <p className="text-xs text-gray-400">
-              {formatNumber(instagram.top_performer.likes)} likes · {formatNumber(instagram.top_performer.comments)} comments
-            </p>
-          </div>
-        )}
-
-        {tiktok?.top_performer && (
-          <div>
-            <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-2">
-              🎵 TikTok — {tiktok.count} videos analyzed
-            </p>
-            <p className="text-sm text-white mb-1">
-              Top: "{tiktok.top_performer.text?.substring(0, 80)}{tiktok.top_performer.text?.length > 80 ? '...' : ''}"
-            </p>
-            <p className="text-xs text-gray-400">
-              {formatNumber(tiktok.top_performer.views)} views · {formatNumber(tiktok.top_performer.likes)} likes · {formatNumber(tiktok.top_performer.shares)} shares
-            </p>
-          </div>
-        )}
-
-        {youtube?.top_performer && (
-          <div>
-            <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-2">
-              ▶ YouTube — {youtube.count} videos analyzed
-            </p>
-            <p className="text-sm text-white mb-1">
-              Top: "{youtube.top_performer.title?.substring(0, 80)}{youtube.top_performer.title?.length > 80 ? '...' : ''}"
-            </p>
-            <p className="text-xs text-gray-400">
-              {formatNumber(youtube.top_performer.views)} views · {formatNumber(youtube.top_performer.likes)} likes
-            </p>
-          </div>
-        )}
-
-        {linkedin?.top_performer && (
-          <div>
-            <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-2">
-              💼 LinkedIn — {linkedin.count} posts analyzed
-            </p>
-            <p className="text-sm text-white mb-1">
-              Top: "{linkedin.top_performer.text?.substring(0, 80)}{linkedin.top_performer.text?.length > 80 ? '...' : ''}"
-            </p>
-            <p className="text-xs text-gray-400">
-              {formatNumber(linkedin.top_performer.likes)} likes · {formatNumber(linkedin.top_performer.comments)} comments · {formatNumber(linkedin.top_performer.reposts)} reposts
-            </p>
-          </div>
         )}
       </div>
 
-      {synthesis && (
-        <>
-          <div className="border-t border-gray-800 my-4"/>
-          <div className="p-4 bg-gray-900 rounded-lg">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
-              What's Working In This Niche
-            </p>
-            <div className="text-sm text-gray-300 space-y-2">
-              {synthesis.split('\n').filter((line: string) => line.trim()).map((line: string, i: number) => (
-                <p key={i}>• {line.replace(/^[-•*]\s*/, '')}</p>
-              ))}
-            </div>
+      {/* Top 3 Angles */}
+      {top_3_angles && top_3_angles.length > 0 && (
+        <div className="mb-6">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            TOP 3 ANGLES CONSIDERED
+          </p>
+          <div className="space-y-2">
+            {top_3_angles.map((angle: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 text-sm">
+                <span className="text-gray-500 font-mono">{i + 1}.</span>
+                <div className="flex-1">
+                  <span className="text-gray-300">{angle.angle}</span>
+                  <span className="text-gray-500"> — {angle.score}</span>
+                  {i === 0 && <span className="text-green-400 ml-2">✓ selected</span>}
+                </div>
+              </div>
+            ))}
           </div>
-        </>
+        </div>
+      )}
+
+      {/* What's Working */}
+      {what_is_working && what_is_working.length > 0 && (
+        <div className="mb-6 p-4 bg-gray-900 rounded-lg">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            WHAT'S WORKING IN THIS NICHE
+          </p>
+          <div className="space-y-1">
+            {what_is_working.map((pattern: string, i: number) => (
+              <p key={i} className="text-sm text-gray-300">• {pattern}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Search Trends */}
+      {search_trends && search_trends.length > 0 && (
+        <div className="mb-6">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            TRENDING SEARCHES
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {search_trends.map((trend: string, i: number) => (
+              <span key={i} className="text-xs px-3 py-1 bg-gray-900 text-gray-400 rounded-full">
+                "{trend}"
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top Performers */}
+      {top_performers && (
+        <div className="space-y-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            TOP PERFORMERS
+          </p>
+
+          {top_performers.instagram && (
+            <div>
+              <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-1">
+                📱 Instagram
+              </p>
+              <p className="text-sm text-white mb-1">
+                "{top_performers.instagram.caption?.substring(0, 100)}{top_performers.instagram.caption?.length > 100 ? '...' : ''}"
+              </p>
+              <p className="text-xs text-gray-400">
+                {formatNumber(top_performers.instagram.likes)} likes · {formatNumber(top_performers.instagram.comments)} comments
+              </p>
+            </div>
+          )}
+
+          {top_performers.tiktok && (
+            <div>
+              <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-1">
+                🎵 TikTok
+              </p>
+              <p className="text-sm text-white mb-1">
+                "{top_performers.tiktok.text?.substring(0, 100)}{top_performers.tiktok.text?.length > 100 ? '...' : ''}"
+              </p>
+              <p className="text-xs text-gray-400">
+                {formatNumber(top_performers.tiktok.views)} views · {formatNumber(top_performers.tiktok.likes)} likes
+              </p>
+            </div>
+          )}
+
+          {top_performers.youtube && (
+            <div>
+              <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-1">
+                ▶ YouTube
+              </p>
+              <p className="text-sm text-white mb-1">
+                "{top_performers.youtube.title?.substring(0, 100)}{top_performers.youtube.title?.length > 100 ? '...' : ''}"
+              </p>
+              <p className="text-xs text-gray-400">
+                {formatNumber(top_performers.youtube.views)} views
+              </p>
+            </div>
+          )}
+
+          {top_performers.linkedin && (
+            <div>
+              <p className="text-xs font-bold text-[#E8622A] uppercase tracking-widest mb-1">
+                💼 LinkedIn
+              </p>
+              <p className="text-sm text-white mb-1">
+                "{top_performers.linkedin.text?.substring(0, 100)}{top_performers.linkedin.text?.length > 100 ? '...' : ''}"
+              </p>
+              <p className="text-xs text-gray-400">
+                {formatNumber(top_performers.linkedin.likes)} likes · {formatNumber(top_performers.linkedin.comments)} comments
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
       <button

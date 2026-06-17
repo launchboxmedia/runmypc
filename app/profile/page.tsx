@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import BusinessFactsManager from '@/components/BusinessFactsManager'
 
 type Profile = {
   id: string
@@ -271,6 +272,11 @@ export default function ProfilePage() {
           <Field label="What transformation do you deliver?">
             <Textarea value={profile.audience_outcome || ''} onChange={v => update('audience_outcome', v)} placeholder="e.g. They learn how to use 0% business credit cards to fund their startup" rows={2} />
           </Field>
+        </Section>
+
+        {/* Section — Business Facts & Assets */}
+        <Section title="Business Facts & Assets">
+          <BusinessFactsManager />
         </Section>
 
         {/* Section — Integrations */}

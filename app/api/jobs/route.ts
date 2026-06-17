@@ -21,6 +21,8 @@ const BOOK_STEPS = [
   { step_key: 'research-niche-content', step_label: 'Researching top content in your niche', phase: 'content_generation' },
   { step_key: 'generate-social-copy', step_label: 'Writing social media content', phase: 'content_generation' },
   { step_key: 'generate-static-creatives', step_label: 'Generating static ad creatives', phase: 'content_generation' },
+  { step_key: 'generate-instagram-carousel', step_label: 'Creating Instagram carousel', phase: 'content_generation' },
+  { step_key: 'generate-platform-videos', step_label: 'Producing platform videos', phase: 'content_generation' },
   { step_key: 'generate-remotion-videos', step_label: 'Producing social videos', phase: 'content_generation' },
   { step_key: 'generate-cinematic-video', step_label: 'Generating cinematic hero video', phase: 'content_generation' },
   { step_key: 'research-ads', step_label: 'Researching top ads in your niche', phase: 'ad_generation' },

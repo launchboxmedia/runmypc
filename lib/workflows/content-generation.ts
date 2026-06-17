@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
+import * as path from 'path'
 import { scrapeNicheContent } from '@/lib/apify'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendMessage, buildStepUpdateMessage } from '@/lib/telegram'
@@ -19,14 +20,14 @@ async function updateStep(
   supabase: ReturnType<typeof createAdminClient>,
   jobId: string,
   stepKey: string,
-  status: 'running' | 'completed' | 'failed',
+  status: 'running' | 'completed' | 'failed' | 'skipped',
   error?: string
 ) {
   await supabase.from('job_steps')
     .update({
       status,
       started_at: status === 'running' ? new Date().toISOString() : undefined,
-      completed_at: status === 'completed' ? new Date().toISOString() : undefined,
+      completed_at: status === 'completed' || status === 'skipped' ? new Date().toISOString() : undefined,
       error
     })
     .eq('job_id', jobId)
@@ -57,7 +58,7 @@ export async function executeContentGeneration(jobId: string) {
   const supabase = createAdminClient()
 
   try {
-    // Step 1: Research niche content
+    // Step 1: Research niche content — Three-layer intelligence
     await updateStep(supabase, jobId, 'research-niche-content', 'running')
 
     const { data: job } = await supabase
@@ -92,107 +93,275 @@ ${profile.brand_voice_examples ? `Voice examples:\n${profile.brand_voice_example
 
     const { anthropic } = getClients()
 
-    // Extract precise search terms
+    // Step 0: Niche classification + term extraction
     const extractionResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Extract 3-5 precise search terms for finding top performing social media content in this niche.
+        content: `Extract 3-5 precise search terms and classify this niche.
 
 Topic: ${job.topic}
 Target audience: ${job.target_audience || ''}
 What they learn: ${job.outcome || ''}
 
-Return ONLY a JSON array of search terms, no explanation:
-["term1", "term2", "term3"]
+Respond ONLY with JSON:
+{
+  "terms": ["term1", "term2", "term3"],
+  "is_b2b": boolean
+}
 
-Terms should be specific keywords that would find relevant content on Instagram, TikTok, YouTube and LinkedIn. Not broad categories.`
+is_b2b = true if niche targets businesses/professionals (consulting, B2B SaaS, corporate training, business funding, etc)
+is_b2b = false if niche targets consumers (credit repair, fitness, personal finance, dating, etc)`
       }]
     })
 
-    const termsText = extractionResponse.content[0].type === 'text' ? extractionResponse.content[0].text : '[]'
-    const terms = JSON.parse(termsText.replace(/```json|```/g, '').trim())
-    const primarySearchTerm = terms[0] || job.topic
-    const allTerms = terms.join(', ')
-    const niche = primarySearchTerm // Use as niche for prompts
+    const extractionText = extractionResponse.content[0].type === 'text' ? extractionResponse.content[0].text : '{}'
+    const extraction = JSON.parse(extractionText.replace(/```json|```/g, '').trim())
+    const terms = extraction.terms || [job.topic]
+    const isB2B = extraction.is_b2b || false
+    const primaryTerm = terms[0] || job.topic
 
-    const nicheContent = await scrapeNicheContent(primarySearchTerm).catch(() => [])
+    // LAYER 1 — Search Intent via Autocomplete
+    const { runApifyActor } = await import('@/lib/apify')
+    const autocompleteResults = await runApifyActor('easyapi/keyword-suggestions-scraper', {
+      keyword: job.topic,
+      platforms: ['google', 'youtube', 'tiktok', 'instagram'],
+      maxSuggestions: 20
+    }).catch(() => [])
 
-    // Parse and analyze research data
-    const instagramPosts = nicheContent.filter((item: any) => item.caption || item.likesCount !== undefined)
-    const tiktokVideos = nicheContent.filter((item: any) => item.text || item.playCount !== undefined)
-    const youtubeVideos = nicheContent.filter((item: any) => item.title && item.viewCount !== undefined)
-    const linkedinPosts = nicheContent.filter((item: any) => item.text && (item.likesCount !== undefined || item.commentsCount !== undefined))
+    // LAYER 2 — Social content scraping (parallel)
+    // Instagram: two-step process (hashtag → usernames → reels)
+    const instagramHashtagResults = await runApifyActor('apify/instagram-hashtag-scraper', {
+      hashtags: [primaryTerm.replace(/\s+/g, '')],
+      resultsLimit: 30
+    }).catch(() => [])
 
-    const topInstagram = instagramPosts.sort((a: any, b: any) =>
-      ((b.likesCount || 0) + (b.commentsCount || 0)) - ((a.likesCount || 0) + (a.commentsCount || 0))
-    )[0]
+    const instagramUsernames = [
+      ...new Set(
+        instagramHashtagResults
+          .slice(0, 10)
+          .map((p: any) => p.ownerUsername || p.username)
+          .filter(Boolean)
+      )
+    ].slice(0, 5)
 
-    const topTiktok = tiktokVideos.sort((a: any, b: any) =>
-      ((b.playCount || 0) + (b.diggCount || 0)) - ((a.playCount || 0) + (a.diggCount || 0))
-    )[0]
+    const instagramResults = instagramUsernames.length > 0
+      ? await runApifyActor('apify/instagram-reel-scraper', {
+          usernames: instagramUsernames,
+          resultsLimit: 15
+        }).catch(() => [])
+      : []
 
-    const topYoutube = youtubeVideos.sort((a: any, b: any) =>
-      ((b.viewCount || 0) + (b.likeCount || 0)) - ((a.viewCount || 0) + (a.likeCount || 0))
-    )[0]
+    const [tiktokResults, youtubeResults, linkedinResults, redditResults, newsResults] = await Promise.all([
+      // TikTok
+      runApifyActor('clockworks/tiktok-scraper', {
+        hashtags: [primaryTerm.replace(/\s+/g, '')],
+        resultsPerPage: 15
+      }).catch(() => []),
 
-    const topLinkedin = linkedinPosts.sort((a: any, b: any) =>
-      ((b.likesCount || 0) + (b.commentsCount || 0) + (b.repostsCount || 0)) -
-      ((a.likesCount || 0) + (a.commentsCount || 0) + (a.repostsCount || 0))
-    )[0]
+      // YouTube
+      runApifyActor('streamers/youtube-scraper', {
+        searchQueries: [primaryTerm],
+        maxResults: 15
+      }).catch(() => []),
 
-    const topPerformers = {
-      instagram: topInstagram ? {
-        caption: (topInstagram.caption || '').substring(0, 100),
-        likes: topInstagram.likesCount || 0,
-        comments: topInstagram.commentsCount || 0
-      } : null,
-      tiktok: topTiktok ? {
-        text: (topTiktok.text || '').substring(0, 100),
-        views: topTiktok.playCount || 0,
-        likes: topTiktok.diggCount || 0,
-        shares: topTiktok.shareCount || 0
-      } : null,
-      youtube: topYoutube ? {
-        title: topYoutube.title || '',
-        views: topYoutube.viewCount || 0,
-        likes: topYoutube.likeCount || 0
-      } : null,
-      linkedin: topLinkedin ? {
-        text: (topLinkedin.text || '').substring(0, 100),
-        likes: topLinkedin.likesCount || 0,
-        comments: topLinkedin.commentsCount || 0,
-        reposts: topLinkedin.repostsCount || 0
-      } : null
-    }
+      // LinkedIn (only if B2B)
+      isB2B
+        ? runApifyActor('harvestapi/linkedin-post-search', {
+            searchQueries: [primaryTerm],
+            maxPosts: 15
+          }).catch(() => [])
+        : Promise.resolve([]),
 
-    let synthesis = 'No niche research data available.'
-    if (topInstagram || topTiktok || topYoutube || topLinkedin) {
-      const synthResponse = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: `Based on this niche research data, identify in 3 bullet points what content angles and hook styles are performing best. Be specific and actionable. Data: ${JSON.stringify(topPerformers)}`
-        }]
-      })
-      synthesis = synthResponse.content[0].type === 'text' ? synthResponse.content[0].text.trim() : synthesis
-    }
+      // Reddit via Firecrawl
+      (async () => {
+        try {
+          const { scrapeUrl } = await import('@/lib/firecrawl')
+          const redditUrl = `https://old.reddit.com/search?q=${encodeURIComponent(primaryTerm)}&sort=relevance&t=month`
+          const scraped = await scrapeUrl(redditUrl)
 
+          // Extract thread titles + selftext from markdown
+          const threads = scraped.content
+            .split('\n\n')
+            .filter(block => block.includes('r/') || block.includes('comments'))
+            .slice(0, 10)
+            .map(block => ({
+              title: block.split('\n')[0] || '',
+              selftext: block.split('\n').slice(1).join(' ').slice(0, 500)
+            }))
+
+          return threads
+        } catch {
+          return []
+        }
+      })(),
+
+      // News via web search + Firecrawl
+      (async () => {
+        try {
+          const { openai } = getClients()
+          // Use GPT-4 web search to find recent news URLs
+          const searchResponse = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [{
+              role: 'user',
+              content: `Find 3 recent, relevant news article URLs about: ${primaryTerm}. Return ONLY a JSON array of URLs: ["url1", "url2", "url3"]`
+            }],
+            max_tokens: 200
+          })
+
+          const searchText = searchResponse.choices[0]?.message?.content || '[]'
+          const urls = JSON.parse(searchText.replace(/```json|```/g, '').trim())
+
+          if (!Array.isArray(urls) || urls.length === 0) return []
+
+          const { scrapeMultipleUrls } = await import('@/lib/firecrawl')
+          const articles = await scrapeMultipleUrls(urls.slice(0, 3))
+
+          return articles.map(a => ({
+            title: a.title || '',
+            content: a.content.slice(0, 2000),
+            url: a.url
+          }))
+        } catch {
+          return []
+        }
+      })()
+    ])
+
+    // LAYER 3 — Content filtering
+    const {
+      filterSocialContent,
+      filterRedditContent,
+      filterNewsContent
+    } = await import('@/lib/contentFilters')
+
+    const [
+      filteredInstagram,
+      filteredTikTok,
+      filteredLinkedIn,
+      filteredReddit,
+      filteredNews
+    ] = await Promise.all([
+      filterSocialContent(instagramResults, 'instagram'),
+      filterSocialContent(tiktokResults, 'tiktok'),
+      isB2B && linkedinResults.length > 0
+        ? filterSocialContent(linkedinResults, 'linkedin')
+        : Promise.resolve([]),
+      filterRedditContent(redditResults),
+      Promise.resolve(filterNewsContent(newsResults))
+    ])
+
+    const approvedInstagram = filteredInstagram.filter(f => !f.excluded).map(f => f.content)
+    const approvedTikTok = filteredTikTok.filter(f => !f.excluded).map(f => f.content)
+    const approvedLinkedIn = filteredLinkedIn.filter(f => !f.excluded).map(f => f.content)
+    const approvedReddit = filteredReddit.filter(f => !f.excluded).map(f => f.content)
+    const approvedNews = filteredNews.filter(f => !f.excluded).map(f => f.content)
+
+    // LAYER 4 — Topic selection (Reddit + News intersection)
+    const topicResponse = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `Identify the best content topic(s) from this research.
+
+NICHE: ${job.topic}
+
+REDDIT QUESTIONS (real confusion):
+${approvedReddit.slice(0, 10).map((r: any) => `- ${r.title}`).join('\n')}
+
+NEWS TOPICS (current relevance):
+${approvedNews.slice(0, 5).map((n: any) => `- ${n.title}`).join('\n')}
+
+Prioritize:
+1. Intersections where Reddit question + news item overlap (strongest signal)
+2. Fall back to top Reddit question or news item alone if no overlap
+
+Respond ONLY with JSON:
+{
+  "topics": [
+    { "title": "specific topic", "source": "reddit_news_overlap|reddit|news" }
+  ]
+}
+
+Return 1-3 topics max.`
+      }]
+    })
+
+    const topicText = topicResponse.content[0].type === 'text' ? topicResponse.content[0].text : '{}'
+    const topicData = JSON.parse(topicText.replace(/```json|```/g, '').trim())
+    const selectedTopics = topicData.topics || [{ title: job.topic, source: 'fallback' }]
+
+    // LAYER 5 — Format reference analysis (social accounts)
+    const formatResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: `Analyze these top-performing social accounts to extract format patterns.
+
+INSTAGRAM:
+${approvedInstagram.slice(0, 5).map((p: any) => {
+  const likes = p.likesCount || p.likes || 0
+  const caption = p.caption || p.text || ''
+  return `- "${caption.slice(0, 150)}" — ${likes} likes`
+}).join('\n')}
+
+TIKTOK:
+${approvedTikTok.slice(0, 5).map((p: any) => {
+  const likes = p.diggCount || p.likes || 0
+  const text = p.text || p.desc || ''
+  return `- "${text.slice(0, 150)}" — ${likes} likes`
+}).join('\n')}
+
+${isB2B && approvedLinkedIn.length > 0 ? `LINKEDIN:
+${approvedLinkedIn.slice(0, 5).map((p: any) => {
+  const likes = p.likesCount || p.likes || 0
+  const text = p.text || p.content || ''
+  return `- "${text.slice(0, 150)}" — ${likes} likes`
+}).join('\n')}` : ''}
+
+Extract ONLY format patterns (hook style, structure, length, CTA convention).
+Do NOT extract topic/subject matter — topics come from separate research.
+
+Respond ONLY with JSON:
+{
+  "hook_patterns": ["pattern 1", "pattern 2", "pattern 3"],
+  "structure_patterns": ["pattern 1", "pattern 2"],
+  "cta_conventions": ["convention 1", "convention 2"]
+}`
+      }]
+    })
+
+    const formatText = formatResponse.content[0].type === 'text' ? formatResponse.content[0].text : '{}'
+    const formatData = JSON.parse(formatText.replace(/```json|```/g, '').trim())
+
+    // Store full research intelligence
     await supabase.from('job_outputs').insert({
       job_id: jobId,
       output_type: 'niche_research',
       platform: null,
-      label: 'Niche Research',
+      label: 'Content Research Intelligence',
       content: JSON.stringify({
-        instagram: { count: instagramPosts.length, top_performer: topPerformers.instagram },
-        tiktok: { count: tiktokVideos.length, top_performer: topPerformers.tiktok },
-        youtube: { count: youtubeVideos.length, top_performer: topPerformers.youtube },
-        linkedin: { count: linkedinPosts.length, top_performer: topPerformers.linkedin },
-        synthesis
+        niche_classification: { is_b2b: isB2B, terms },
+        selected_topics: selectedTopics,
+        format_reference: formatData,
+        sources_analyzed: {
+          instagram: approvedInstagram.length,
+          tiktok: approvedTikTok.length,
+          youtube: youtubeResults.length,
+          linkedin: approvedLinkedIn.length,
+          reddit: approvedReddit.length,
+          news: approvedNews.length
+        },
+        autocomplete_suggestions: autocompleteResults.slice(0, 10)
       }),
-      metadata: { search_terms: allTerms, primary_term: primarySearchTerm }
+      metadata: {
+        primary_topic: selectedTopics[0]?.title || job.topic,
+        is_b2b: isB2B
+      }
     })
 
     await updateStep(supabase, jobId, 'research-niche-content', 'completed')
@@ -201,9 +370,25 @@ Terms should be specific keywords that would find relevant content on Instagram,
     await updateStep(supabase, jobId, 'generate-social-copy', 'running')
     await notifyStep(supabase, job.user_id, 'Writing social media posts', 'content_generation')
 
-    const contentSummary = nicheContent.slice(0, 5)
-      .map((item: Record<string, unknown>) => JSON.stringify(item))
-      .join('\n')
+    const primaryTopic = selectedTopics[0]?.title || job.topic
+    const hookPatterns = formatData.hook_patterns?.join('\n') || ''
+    const structurePatterns = formatData.structure_patterns?.join('\n') || ''
+
+    // Fetch business facts for safety checks
+    const { getBusinessFacts } = await import('@/lib/businessFacts')
+    const businessFacts = await getBusinessFacts(job.user_id, {
+      serviceTag: job.service_tag // filter by service tag if job has one
+    })
+
+    // Build facts context for generation
+    const factsContext = businessFacts.length > 0 ? `
+
+VERIFIED BUSINESS FACTS (use ONLY these, never invent):
+${businessFacts.map(f => `- [${f.type.toUpperCase()}] ${f.content}`).join('\n')}
+
+CRITICAL: If you need a result/credential/location claim, use ONLY the facts above. If none exist, generate educational content instead. Never invent placeholder numbers or unverified claims.` : `
+
+CRITICAL: No business facts have been provided. Do NOT generate any posts claiming specific results, credentials, locations, or client testimonials. Focus on educational/value content only.`
 
     for (const platform of PLATFORMS) {
       const { anthropic } = getClients()
@@ -227,21 +412,48 @@ Terms should be specific keywords that would find relevant content on Instagram,
         platformInstructions = `Match ${platform} native style, scroll-stopping hook, feel authentic.`
       }
 
+      // Check if we can generate results-style content
+      const hasResultFacts = businessFacts.some(f => f.type === 'result')
+      const contentTypeInstruction = hasResultFacts
+        ? 'You may include educational content OR results/testimonial content (using verified facts only).'
+        : 'Focus on educational/value content only. Do NOT generate results or testimonial posts.'
+
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `You are an expert ${platform} content creator in the ${niche} space.
+          content: `You are an expert ${platform} content creator.
 
-Book topic: ${job.topic}
+=== TOPIC (what to write about) ===
+${primaryTopic}
 
+Book context: ${job.topic}
+Target audience: ${job.target_audience || 'general'}
+
+=== FORMAT REFERENCE (how to structure it) ===
+Hook patterns that work:
+${hookPatterns}
+
+Structure patterns:
+${structurePatterns}
+
+=== BRAND VOICE CONSTRAINTS ===
 ${brandContext}
 
-Top performing content in this niche:
-${contentSummary}
+${factsContext}
 
-Create 3 high-performing ${platform} posts to promote this ebook. ${platformInstructions}${ctaSuffix}
+Content built on demonstrated expertise and service, not hacks.
+No guaranteed-outcome claims.
+No fabricated specifics about real people, cases, or numbers.
+${contentTypeInstruction}
+
+=== INSTRUCTIONS ===
+Create 3 high-performing ${platform} posts about the TOPIC above.
+Structure them using FORMAT REFERENCE patterns.
+Keep all content compliant with BRAND VOICE CONSTRAINTS.
+
+${platformInstructions}${ctaSuffix}
 
 Respond ONLY with JSON:
 {
@@ -280,72 +492,231 @@ Respond ONLY with JSON:
 
     await updateStep(supabase, jobId, 'generate-social-copy', 'completed')
 
-    // Step 3: Generate static creatives
+    // Step 3: Generate static creatives (all platforms via Atlas Cloud)
     await updateStep(supabase, jobId, 'generate-static-creatives', 'running')
     await notifyStep(supabase, job.user_id, 'Creating static visuals', 'content_generation')
 
-    const creativePrompts = [
+    const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
+
+    // Fetch approved business assets for result-based creatives
+    const { getBusinessAssets } = await import('@/lib/businessFacts')
+    const approvedAssets = await getBusinessAssets(job.user_id, { status: 'approved' })
+    const resultFacts = businessFacts.filter(f => f.type === 'result')
+
+    // Get assets linked to result facts
+    const resultAssets = approvedAssets.filter(a =>
+      a.business_fact_id && resultFacts.some(f => f.id === a.business_fact_id)
+    )
+
+    const CREATIVE_SPECS = [
       {
         platform: 'instagram',
-        label: 'Instagram Square Post',
-        prompt: `Clean minimal promotional graphic for an ebook about ${job.topic}. Bold typography, ${niche} niche aesthetic, square format, high contrast, professional.`,
-        size: '1024x1024' as const
+        label: 'Instagram Square',
+        size: '1024x1024' as const,
+        prompt: `Professional social media creative for Instagram. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Brand color: ${brandColor}. Clean, bold, scroll-stopping design. Illustrative/stylistic, not a fake screenshot.`
+      },
+      {
+        platform: 'instagram_story',
+        label: 'Instagram Story',
+        size: '1024x1536' as const,
+        prompt: `Vertical Instagram story creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Brand color: ${brandColor}. Bold vertical format.`
+      },
+      {
+        platform: 'tiktok',
+        label: 'TikTok Thumbnail',
+        size: '1024x1536' as const,
+        prompt: `TikTok video thumbnail. Topic: ${primaryTopic}. Attention-grabbing, bold, energetic. Brand color: ${brandColor}. Vertical format.`
+      },
+      {
+        platform: 'youtube',
+        label: 'YouTube Thumbnail',
+        size: '1536x1024' as const,
+        prompt: `YouTube video thumbnail. Topic: ${primaryTopic}. Bold text space on left, visual on right. High contrast. Brand color: ${brandColor}. Horizontal format.`
+      },
+      {
+        platform: 'linkedin',
+        label: 'LinkedIn Banner',
+        size: '1536x1024' as const,
+        prompt: `Professional LinkedIn post image. Topic: ${primaryTopic}. Clean, corporate but engaging. Brand color: ${brandColor}. Horizontal format.`
       },
       {
         platform: 'facebook',
-        label: 'Facebook Ad Creative',
-        prompt: `Professional ebook advertisement for ${job.topic}. Clean layout, compelling headline space, ${niche} audience, rectangular format.`,
-        size: '1536x1024' as const
-      },
-      {
-        platform: 'instagram',
-        label: 'Instagram Story',
-        prompt: `Vertical story graphic promoting an ebook about ${job.topic}. Vibrant, bold, ${niche} niche, mobile-first design.`,
-        size: '1024x1536' as const
+        label: 'Facebook Ad',
+        size: '1536x1024' as const,
+        prompt: `Facebook ad creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Trust-building, professional. Brand color: ${brandColor}.`
       }
     ]
 
-    for (const creative of creativePrompts) {
+    const { generateImage } = await import('@/lib/atlascloud')
+
+    for (const spec of CREATIVE_SPECS) {
       try {
-        const { generateImage } = await import('@/lib/atlascloud')
-        const result = await generateImage({
-          prompt: creative.prompt,
-          model: 'gpt-image-2',
-          size: creative.size
-        })
+        // Check if this is a results-focused creative and we have a real asset
+        const isResultCreative = spec.prompt.toLowerCase().includes('result') ||
+                                 spec.prompt.toLowerCase().includes('testimonial') ||
+                                 spec.prompt.toLowerCase().includes('proof')
 
-        // Fetch image from URL
-        const imageRes = await fetch(result.url)
-        const buffer = Buffer.from(await imageRes.arrayBuffer())
+        let finalUrl: string
+        let metadata: any = { type: 'static_creative', size: spec.size }
 
-        const filename = `${job.user_id}/${jobId}/creatives/${creative.platform}-${Date.now()}.jpg`
+        if (isResultCreative && resultAssets.length > 0) {
+          // Use real uploaded asset instead of generating
+          const asset = resultAssets[0] // Use first approved result asset
+          const { data: urlData } = supabase.storage
+            .from('job-assets')
+            .getPublicUrl(asset.file_path)
 
-        const { error: uploadError } = await supabase.storage
-          .from('job-assets')
-          .upload(filename, buffer, { contentType: 'image/jpeg' })
+          finalUrl = urlData.publicUrl
+          metadata.used_real_asset = true
+          metadata.asset_id = asset.id
+        } else {
+          // Generate creative via GPT-Image-2
+          const result = await generateImage({
+            prompt: spec.prompt,
+            model: 'gpt-image-2',
+            size: spec.size
+          })
 
-        if (!uploadError) {
+          if (!result.url) continue
+
+          const imageRes = await fetch(result.url)
+          const imageBuffer = Buffer.from(await imageRes.arrayBuffer())
+          const filename = `${job.user_id}/${jobId}/creatives/${spec.platform}-${Date.now()}.jpg`
+
+          const { error } = await supabase.storage
+            .from('job-assets')
+            .upload(filename, imageBuffer, { contentType: 'image/jpeg' })
+
+          if (error) continue
+
           const { data: urlData } = supabase.storage
             .from('job-assets')
             .getPublicUrl(filename)
 
-          await supabase.from('job_outputs').insert({
-            job_id: jobId,
-            output_type: 'static_creative',
-            platform: creative.platform,
-            label: creative.label,
-            url: urlData.publicUrl,
-            metadata: { size: creative.size }
-          })
+          finalUrl = urlData.publicUrl
         }
+
+        await supabase.from('job_outputs').insert({
+          job_id: jobId,
+          output_type: 'static_creative',
+          platform: spec.platform,
+          label: spec.label,
+          url: finalUrl,
+          metadata
+        })
       } catch (err) {
-        console.error(`Failed to generate creative for ${creative.platform}:`, err)
+        console.error(`Creative generation failed for ${spec.platform}:`, err)
+        // Continue — don't kill the job for one failed creative
       }
     }
 
     await updateStep(supabase, jobId, 'generate-static-creatives', 'completed')
 
-    // Step 4: Generate Remotion videos
+    // Step 4: Generate Instagram carousel
+    await updateStep(supabase, jobId, 'generate-instagram-carousel', 'running')
+
+    try {
+      // Get Instagram post content
+      const { data: instagramOutput } = await supabase
+        .from('job_outputs')
+        .select('content')
+        .eq('job_id', jobId)
+        .eq('output_type', 'ad_copy')
+        .eq('platform', 'instagram')
+        .limit(1)
+        .single()
+
+      if (!instagramOutput?.content) {
+        await updateStep(supabase, jobId, 'generate-instagram-carousel', 'skipped')
+      } else {
+        const instParsed = JSON.parse(instagramOutput.content)
+
+        // Extract insights from body copy
+        const bodyLines = (instParsed.body || '').split('\n').filter(Boolean)
+        const insights = bodyLines.slice(0, 5)
+
+        // Build 7 slides
+        const slides = [
+          { content: instParsed.hook || primaryTopic, slideType: 'hook' as const },
+          ...insights.slice(0, 5).map((line: string) => ({
+            content: line.replace(/^[•\-✅→\d\.\s]+/, '').trim(),
+            slideType: 'insight' as const
+          })),
+          { content: instParsed.cta || 'Follow for more', slideType: 'cta' as const }
+        ].slice(0, 7)
+
+        const businessName = profile?.business_name || 'RunMyPC'
+        const handle = profile?.instagram_handle || '@runmypc'
+
+        const outputDir = path.join(process.cwd(), 'tmp', 'carousel', jobId)
+
+        const { renderCarousel } = await import('@/lib/remotionRender')
+        const slidePaths = await renderCarousel({
+          slides,
+          brandColor,
+          businessName,
+          handle,
+          outputDir
+        })
+
+        // Upload all slides
+        const uploadedUrls: string[] = []
+
+        for (let i = 0; i < slidePaths.length; i++) {
+          const slideBuffer = require('fs').readFileSync(slidePaths[i])
+          const filename = `${job.user_id}/${jobId}/carousel/slide-${i + 1}.png`
+
+          const { error } = await supabase.storage
+            .from('job-assets')
+            .upload(filename, slideBuffer, { contentType: 'image/png' })
+
+          if (!error) {
+            const { data: urlData } = supabase.storage
+              .from('job-assets')
+              .getPublicUrl(filename)
+            uploadedUrls.push(urlData.publicUrl)
+          }
+
+          require('fs').unlinkSync(slidePaths[i])
+        }
+
+        if (uploadedUrls.length > 0) {
+          await supabase.from('job_outputs').insert({
+            job_id: jobId,
+            output_type: 'static_creative',
+            platform: 'instagram_carousel',
+            label: 'Instagram Carousel (7 Slides)',
+            url: uploadedUrls[0],
+            metadata: {
+              type: 'carousel',
+              slide_urls: uploadedUrls,
+              slide_count: uploadedUrls.length
+            }
+          })
+        }
+
+        await updateStep(supabase, jobId, 'generate-instagram-carousel', 'completed')
+      }
+    } catch (err) {
+      console.error('Carousel generation failed:', err)
+      await updateStep(supabase, jobId, 'generate-instagram-carousel', 'failed')
+    }
+
+    // Step 5: Generate platform videos via Hyperframes
+    await updateStep(supabase, jobId, 'generate-platform-videos', 'running')
+
+    try {
+      // TODO: Implement Hyperframes video generation
+      // For each platform (Instagram, TikTok, YouTube) generate branded motion graphics video
+      // using Hyperframes API with winning angle + brand colors
+      console.log('Platform videos via Hyperframes — coming soon')
+      await updateStep(supabase, jobId, 'generate-platform-videos', 'skipped')
+    } catch (err) {
+      console.error('Platform video generation failed:', err)
+      await updateStep(supabase, jobId, 'generate-platform-videos', 'failed')
+    }
+
+    // Step 6: Generate Remotion social videos
     await updateStep(supabase, jobId, 'generate-remotion-videos', 'running')
     await notifyStep(supabase, job.user_id, 'Rendering social videos', 'content_generation')
 
@@ -451,7 +822,7 @@ Respond ONLY with JSON:
       // Don't throw — video failure shouldn't kill the whole job
     }
 
-    // Step 5: Generate cinematic video
+    // Step 7: Generate cinematic video
     await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
     await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 

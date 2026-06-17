@@ -4,6 +4,7 @@ import { ResearchSection } from './ResearchSection'
 
 type JobOutput = {
   id: string
+  job_id: string
   output_type: string
   platform: string | null
   label: string
@@ -25,7 +26,8 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
 
   if (!isActive) return null
 
-  const creatives = outputs.filter(o => o.output_type === 'static_creative')
+  const creatives = outputs.filter(o => o.output_type === 'static_creative' && o.platform !== 'instagram_carousel')
+  const carousel = outputs.find(o => o.output_type === 'static_creative' && o.platform === 'instagram_carousel')
   const cinematicVideo = outputs.find(o => o.output_type === 'cinematic_video')
   const videos = outputs.filter(o => o.output_type === 'social_video')
   const socialPosts = outputs.filter(o =>
@@ -72,6 +74,35 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Instagram Carousel */}
+      {carousel && carousel.metadata?.slide_urls && (
+        <div className="mb-8">
+          <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
+            Instagram Carousel — {carousel.metadata.slide_count} Slides
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {carousel.metadata.slide_urls.map((url: string, i: number) => (
+              <div key={i} className="shrink-0">
+                <img
+                  src={url}
+                  alt={`Slide ${i + 1}`}
+                  className="w-24 h-24 object-cover rounded-lg border border-gray-800"
+                />
+                <p className="text-xs text-gray-600 text-center mt-1">
+                  {i === 0 ? 'Hook' : i === carousel.metadata.slide_count - 1 ? 'CTA' : `Slide ${i + 1}`}
+                </p>
+              </div>
+            ))}
+          </div>
+          <a
+            href={`/api/jobs/${outputs[0]?.job_id}/download-carousel`}
+            className="mt-2 inline-block text-xs text-[#E8622A] hover:underline"
+          >
+            Download All Slides (ZIP)
+          </a>
         </div>
       )}
 
