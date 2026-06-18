@@ -598,13 +598,18 @@ Respond ONLY with JSON:
           metadata.asset_id = asset.id
         } else {
           // Generate creative via GPT-Image-2
+          console.log(`Generating ${spec.platform} creative via Atlas Cloud...`)
           const result = await generateImage({
             prompt: spec.prompt,
             model: 'gpt-image-2',
             size: spec.size
           })
 
-          if (!result.url) continue
+          if (!result.url) {
+            console.error(`No URL returned for ${spec.platform}`)
+            continue
+          }
+          console.log(`${spec.platform} creative generated:`, result.url)
 
           const imageRes = await fetch(result.url)
           const imageBuffer = Buffer.from(await imageRes.arrayBuffer())
@@ -632,7 +637,9 @@ Respond ONLY with JSON:
           metadata
         })
       } catch (err) {
-        console.error(`Creative generation failed for ${spec.platform}:`, err)
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        console.error(`Creative generation failed for ${spec.platform}:`, errorMsg)
+        console.error('Full error:', err)
         // Continue — don't kill the job for one failed creative
       }
     }
