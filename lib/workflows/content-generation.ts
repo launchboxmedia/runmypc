@@ -640,6 +640,17 @@ Respond ONLY with JSON:
         const errorMsg = err instanceof Error ? err.message : String(err)
         console.error(`Creative generation failed for ${spec.platform}:`, errorMsg)
         console.error('Full error:', err)
+
+        // Store error as output for visibility
+        await supabase.from('job_outputs').insert({
+          job_id: jobId,
+          output_type: 'error',
+          platform: spec.platform,
+          label: `${spec.label} Error`,
+          content: JSON.stringify({ error: errorMsg, timestamp: new Date().toISOString() }),
+          metadata: { type: 'generation_error', step: 'static_creative' }
+        })
+
         // Continue — don't kill the job for one failed creative
       }
     }
