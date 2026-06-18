@@ -47,7 +47,9 @@ export function ResearchSection({ outputs, isActive }: Props) {
     data = JSON.parse(researchOutput.content || '{}')
   } catch {}
 
-  const { winning_angle, score, top_3_angles, what_is_working, search_trends, top_performers, platforms_analyzed } = data
+  // Get primary topic from metadata (new schema) or fallback to old winning_angle
+  const primaryTopic = researchOutput.metadata?.primary_topic || data.winning_angle || ''
+  const { top_3_angles, what_is_working, search_trends, top_performers, platforms_analyzed } = data
 
   if (!expanded) {
     return (
@@ -61,10 +63,10 @@ export function ResearchSection({ outputs, isActive }: Props) {
               <span className="text-green-400 text-sm">✓</span>
               <div>
                 <p className="text-sm text-gray-300">
-                  Research Complete — Winning angle selected (Score: {score || 0}/100)
+                  Research Complete — Primary topic selected
                 </p>
                 <p className="text-xs text-[#E8622A] mt-1 font-medium">
-                  "{winning_angle || 'Analyzing...'}"
+                  "{primaryTopic || 'Analyzing...'}"
                 </p>
                 {platforms_analyzed && (
                   <p className="text-xs text-gray-500 mt-1">
@@ -85,34 +87,34 @@ export function ResearchSection({ outputs, isActive }: Props) {
   return (
     <div className="mb-8 p-6 bg-gray-950 border border-gray-800 rounded-lg">
 
-      {/* Winning Angle */}
+      {/* Primary Topic */}
       <div className="mb-6 p-4 bg-gradient-to-r from-[#E8622A]/20 to-transparent border-l-4 border-[#E8622A] rounded">
         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
-          WINNING ANGLE
+          PRIMARY TOPIC
         </p>
         <p className="text-lg text-white font-bold mb-1">
-          "{winning_angle}" — Score {score}/100
+          "{primaryTopic}"
         </p>
-        {data.winning_angle_why && (
+        {data.topic_rationale && (
           <p className="text-sm text-gray-400 mt-2">
-            {data.winning_angle_why}
+            {data.topic_rationale}
           </p>
         )}
       </div>
 
-      {/* Top 3 Angles */}
-      {top_3_angles && top_3_angles.length > 0 && (
+      {/* Top Topics */}
+      {data.topics && data.topics.length > 0 && (
         <div className="mb-6">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
-            TOP 3 ANGLES CONSIDERED
+            TOPICS CONSIDERED
           </p>
           <div className="space-y-2">
-            {top_3_angles.map((angle: any, i: number) => (
+            {data.topics.map((topic: any, i: number) => (
               <div key={i} className="flex items-start gap-3 text-sm">
                 <span className="text-gray-500 font-mono">{i + 1}.</span>
                 <div className="flex-1">
-                  <span className="text-gray-300">{angle.angle}</span>
-                  <span className="text-gray-500"> — {angle.score}</span>
+                  <span className="text-gray-300">{topic.title || topic.angle}</span>
+                  {topic.source && <span className="text-gray-500 text-xs ml-2">({topic.source})</span>}
                   {i === 0 && <span className="text-green-400 ml-2">✓ selected</span>}
                 </div>
               </div>
