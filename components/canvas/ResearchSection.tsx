@@ -49,8 +49,15 @@ export function ResearchSection({ outputs, isActive }: Props) {
 
   // Get primary topic from metadata (new schema) or fallback to old winning_angle
   const primaryTopic = researchOutput.metadata?.primary_topic || data.winning_angle || ''
-  const { top_3_angles, what_is_working, search_trends, top_performers, platforms_analyzed } = data
-  const sources = data.sources_analyzed || platforms_analyzed || {}
+
+  // New schema uses different field names
+  const topics = data.selected_topics || data.topics || []
+  const searchTrends = data.autocomplete_suggestions || data.search_trends || []
+  const formatReference = data.format_reference || {}
+  const sources = data.sources_analyzed || data.platforms_analyzed || {}
+
+  // Old schema compatibility
+  const { top_3_angles, what_is_working, top_performers } = data
 
   if (!expanded) {
     return (
@@ -108,18 +115,39 @@ export function ResearchSection({ outputs, isActive }: Props) {
       </div>
 
       {/* Top Topics */}
-      {data.topics && data.topics.length > 0 && (
+      {topics.length > 0 && (
         <div className="mb-6">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
             TOPICS CONSIDERED
           </p>
           <div className="space-y-2">
-            {data.topics.map((topic: any, i: number) => (
+            {topics.map((topic: any, i: number) => (
               <div key={i} className="flex items-start gap-3 text-sm">
                 <span className="text-gray-500 font-mono">{i + 1}.</span>
                 <div className="flex-1">
                   <span className="text-gray-300">{topic.title || topic.angle}</span>
                   {topic.source && <span className="text-gray-500 text-xs ml-2">({topic.source})</span>}
+                  {i === 0 && <span className="text-green-400 ml-2">✓ selected</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Old schema compatibility: top 3 angles */}
+      {!topics.length && top_3_angles && top_3_angles.length > 0 && (
+        <div className="mb-6">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            TOP 3 ANGLES CONSIDERED
+          </p>
+          <div className="space-y-2">
+            {top_3_angles.map((angle: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 text-sm">
+                <span className="text-gray-500 font-mono">{i + 1}.</span>
+                <div className="flex-1">
+                  <span className="text-gray-300">{angle.angle}</span>
+                  <span className="text-gray-500"> — {angle.score}</span>
                   {i === 0 && <span className="text-green-400 ml-2">✓ selected</span>}
                 </div>
               </div>
@@ -142,17 +170,31 @@ export function ResearchSection({ outputs, isActive }: Props) {
         </div>
       )}
 
-      {/* Search Trends */}
-      {search_trends && search_trends.length > 0 && (
+      {/* Search Trends / Autocomplete Suggestions */}
+      {searchTrends.length > 0 && (
         <div className="mb-6">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
-            TRENDING SEARCHES
+            SEARCH SUGGESTIONS
           </p>
           <div className="flex flex-wrap gap-2">
-            {search_trends.map((trend: string, i: number) => (
+            {searchTrends.map((trend: string, i: number) => (
               <span key={i} className="text-xs px-3 py-1 bg-gray-900 text-gray-400 rounded-full">
                 "{trend}"
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Format Reference Patterns (new schema) */}
+      {formatReference.hooks && formatReference.hooks.length > 0 && (
+        <div className="mb-6 p-4 bg-gray-900 rounded-lg">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+            WINNING HOOK PATTERNS
+          </p>
+          <div className="space-y-1">
+            {formatReference.hooks.map((hook: string, i: number) => (
+              <p key={i} className="text-sm text-gray-300">• {hook}</p>
             ))}
           </div>
         </div>
