@@ -50,6 +50,7 @@ export function ResearchSection({ outputs, isActive }: Props) {
   // Get primary topic from metadata (new schema) or fallback to old winning_angle
   const primaryTopic = researchOutput.metadata?.primary_topic || data.winning_angle || ''
   const { top_3_angles, what_is_working, search_trends, top_performers, platforms_analyzed } = data
+  const sources = data.sources_analyzed || platforms_analyzed || {}
 
   if (!expanded) {
     return (
@@ -68,11 +69,15 @@ export function ResearchSection({ outputs, isActive }: Props) {
                 <p className="text-xs text-[#E8622A] mt-1 font-medium">
                   "{primaryTopic || 'Analyzing...'}"
                 </p>
-                {platforms_analyzed && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Instagram ({platforms_analyzed.instagram || 0}) · TikTok ({platforms_analyzed.tiktok || 0}) · YouTube ({platforms_analyzed.youtube || 0}) · LinkedIn ({platforms_analyzed.linkedin || 0}) · ↓ expand
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  📱 Instagram ({sources.instagram || 0}) ·
+                  🎵 TikTok ({sources.tiktok || 0}) ·
+                  ▶ YouTube ({sources.youtube || 0})
+                  {sources.linkedin > 0 && ` · 💼 LinkedIn (${sources.linkedin})`}
+                  {sources.reddit > 0 && ` · 🗨 Reddit (${sources.reddit})`}
+                  {sources.news > 0 && ` · 📰 News (${sources.news})`}
+                  {' · ↓ expand'}
+                </p>
               </div>
             </div>
             <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
