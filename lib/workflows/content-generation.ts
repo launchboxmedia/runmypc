@@ -117,7 +117,8 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
     })
 
     const extractionText = extractionResponse.content[0].type === 'text' ? extractionResponse.content[0].text : '{}'
-    const extraction = JSON.parse(extractionText.replace(/```json|```/g, '').trim())
+    const jsonMatch = extractionText.match(/\{[\s\S]*\}/)
+    const extraction = JSON.parse(jsonMatch ? jsonMatch[0] : '{}')
     const terms = extraction.terms || [job.topic]
     const isB2B = extraction.is_b2b || false
     const primaryTerm = terms[0] || job.topic
@@ -212,7 +213,8 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
           })
 
           const searchText = searchResponse.choices[0]?.message?.content || '[]'
-          const urls = JSON.parse(searchText.replace(/```json|```/g, '').trim())
+          const arrayMatch = searchText.match(/\[[\s\S]*\]/)
+          const urls = JSON.parse(arrayMatch ? arrayMatch[0] : '[]')
 
           if (!Array.isArray(urls) || urls.length === 0) return []
 
@@ -291,7 +293,8 @@ Return 1-3 topics max.`
     })
 
     const topicText = topicResponse.content[0].type === 'text' ? topicResponse.content[0].text : '{}'
-    const topicData = JSON.parse(topicText.replace(/```json|```/g, '').trim())
+    const topicMatch = topicText.match(/\{[\s\S]*\}/)
+    const topicData = JSON.parse(topicMatch ? topicMatch[0] : '{}')
     const selectedTopics = topicData.topics || [{ title: job.topic, source: 'fallback' }]
 
     // LAYER 5 — Format reference analysis (social accounts)
@@ -336,7 +339,8 @@ Respond ONLY with JSON:
     })
 
     const formatText = formatResponse.content[0].type === 'text' ? formatResponse.content[0].text : '{}'
-    const formatData = JSON.parse(formatText.replace(/```json|```/g, '').trim())
+    const formatMatch = formatText.match(/\{[\s\S]*\}/)
+    const formatData = JSON.parse(formatMatch ? formatMatch[0] : '{}')
 
     // Store full research intelligence
     await supabase.from('job_outputs').insert({
@@ -465,16 +469,23 @@ Respond ONLY with JSON:
       })
 
       const text = response.content[0].type === 'text' ? response.content[0].text : ''
-      const clean = text.replace(/```json|```/g, '').trim()
 
       let posts: any[]
       try {
-        const parsed = JSON.parse(clean)
+        // Extract first complete JSON object from response
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) {
+          throw new Error('No JSON object found in response')
+        }
+        const parsed = JSON.parse(jsonMatch[0])
         posts = parsed.posts
+
+        if (!Array.isArray(posts) || posts.length === 0) {
+          throw new Error('No posts array in parsed JSON')
+        }
       } catch (parseError) {
         console.error(`JSON parse error for ${platform} social copy:`, parseError)
         console.error(`Raw response text (first 500 chars):`, text.substring(0, 500))
-        console.error(`Cleaned text (first 500 chars):`, clean.substring(0, 500))
         throw new Error(`Failed to parse ${platform} social copy JSON: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
       }
 
@@ -629,7 +640,8 @@ Respond ONLY with JSON:
       if (!instagramOutput?.content) {
         await updateStep(supabase, jobId, 'generate-instagram-carousel', 'skipped')
       } else {
-        const instParsed = JSON.parse(instagramOutput.content)
+        const contentMatch = instagramOutput.content.match(/\{[\s\S]*\}/)
+        const instParsed = JSON.parse(contentMatch ? contentMatch[0] : instagramOutput.content)
 
         // Extract insights from body copy
         const bodyLines = (instParsed.body || '').split('\n').filter(Boolean)
@@ -754,7 +766,9 @@ Respond ONLY with JSON:
           .filter(o => o.metadata?.type === 'social_post')
           .map(o => {
             try {
-              const parsed = JSON.parse(o.content || '{}')
+              const contentStr = o.content || '{}'
+              const contentMatch = contentStr.match(/\{[\s\S]*\}/)
+              const parsed = JSON.parse(contentMatch ? contentMatch[0] : contentStr)
               return {
                 platform: o.platform || 'instagram',
                 hook: parsed.hook || '',
