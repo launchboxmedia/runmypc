@@ -132,7 +132,7 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
     }).catch(() => [])
 
     // LAYER 2 — Social content scraping (parallel)
-    // Instagram: two-step process (hashtag → usernames → reels)
+    // Instagram: try hashtag → usernames → reels, fallback to direct hashtag scraper
     const instagramHashtagResults = await runApifyActor('apify/instagram-hashtag-scraper', {
       hashtags: [primaryTerm.replace(/\s+/g, '')],
       resultsLimit: 30
@@ -147,12 +147,17 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
       )
     ].slice(0, 5)
 
-    const instagramResults = instagramUsernames.length > 0
+    let instagramResults = instagramUsernames.length > 0
       ? await runApifyActor('apify/instagram-reel-scraper', {
           usernames: instagramUsernames,
           resultsLimit: 15
         }).catch(() => [])
       : []
+
+    // Fallback: if no results from reel scraper, use hashtag results directly
+    if (instagramResults.length === 0 && instagramHashtagResults.length > 0) {
+      instagramResults = instagramHashtagResults.slice(0, 15)
+    }
 
     const [tiktokResults, youtubeResults, linkedinResults, redditResults, newsResults] = await Promise.all([
       // TikTok
