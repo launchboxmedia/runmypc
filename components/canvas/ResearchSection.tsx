@@ -177,11 +177,15 @@ export function ResearchSection({ outputs, isActive }: Props) {
             SEARCH SUGGESTIONS
           </p>
           <div className="flex flex-wrap gap-2">
-            {searchTrends.map((trend: string, i: number) => (
-              <span key={i} className="text-xs px-3 py-1 bg-gray-900 text-gray-400 rounded-full">
-                "{trend}"
-              </span>
-            ))}
+            {searchTrends.map((trend: any, i: number) => {
+              const keyword = typeof trend === 'string' ? trend : trend.keyword || trend.term || ''
+              if (!keyword) return null
+              return (
+                <span key={i} className="text-xs px-3 py-1 bg-gray-900 text-gray-400 rounded-full">
+                  "{keyword}"
+                </span>
+              )
+            })}
           </div>
         </div>
       )}
