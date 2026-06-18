@@ -138,14 +138,25 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
       resultsLimit: 30
     }).catch(() => [])
 
+    console.log(`Instagram hashtag scraper returned ${instagramHashtagResults.length} results`)
+    if (instagramHashtagResults.length > 0) {
+      console.log('Sample hashtag result fields:', Object.keys(instagramHashtagResults[0]))
+    }
+
     const instagramUsernames = [
       ...new Set(
         instagramHashtagResults
           .slice(0, 10)
-          .map((p: any) => p.ownerUsername || p.username)
+          .map((p: any) => {
+            // Try multiple possible username field locations
+            const username = p.ownerUsername || p.username || p.owner?.username || p.user?.username
+            return username
+          })
           .filter(Boolean)
       )
     ].slice(0, 5)
+
+    console.log(`Extracted ${instagramUsernames.length} usernames:`, instagramUsernames)
 
     let instagramResults = instagramUsernames.length > 0
       ? await runApifyActor('apify/instagram-reel-scraper', {
