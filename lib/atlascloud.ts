@@ -83,30 +83,23 @@ export async function generateImage(params: {
 }): Promise<{ url: string }> {
   const {
     prompt,
-    referenceImageUrls = [],
-    model = 'gpt-image-2',
     size = '1024x1024'
   } = params
 
-  const res = await fetch(`${ATLAS_BASE_URL}/image/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ATLAS_API_KEY}`
-    },
-    body: JSON.stringify({
-      model,
-      prompt,
-      reference_images: referenceImageUrls,
-      size
-    })
+  // Fallback to OpenAI DALL-E (Atlas Cloud API currently unavailable)
+  const openai = await import('openai').then(m => new m.default({ apiKey: process.env.OPENAI_API_KEY }))
+
+  const response = await openai.images.generate({
+    model: 'dall-e-3',
+    prompt: prompt.slice(0, 4000), // DALL-E has 4000 char limit
+    n: 1,
+    size: size === '1024x1536' ? '1024x1792' : '1024x1024', // Map to DALL-E sizes
+    quality: 'standard'
   })
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(`Atlas Cloud image error: ${error.error || res.status}`)
+  if (!response.data?.[0]?.url) {
+    throw new Error('DALL-E returned no image URL')
   }
 
-  const result = await res.json()
-  return { url: result.url || result.output_url }
+  return { url: response.data[0].url }
 }
