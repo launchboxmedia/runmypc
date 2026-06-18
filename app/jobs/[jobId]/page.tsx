@@ -118,6 +118,7 @@ export default function JobCanvas() {
         mode={job.mode}
         status={loopsRunning ? 'running' : job.status}
         error={job.error}
+        onCancel={fetchJob}
       />
 
       <div className="max-w-4xl mx-auto px-6 py-8">

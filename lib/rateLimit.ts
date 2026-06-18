@@ -1,17 +1,30 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
+const UNLIMITED_USERS = [
+  'launchboxmedia2025@gmail.com',
+  'credibully@gmail.com',
+  'creditrize2026@gmail.com'
+]
+
 export async function checkRateLimit(userId: string): Promise<{
   allowed: boolean
   reason?: string
 }> {
   const supabase = createAdminClient()
 
-  // Get user plan
+  // Get user profile
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_status, plan')
+    .select('email, subscription_status, plan')
     .eq('id', userId)
     .single()
+
+  // Unlimited access for specific users
+  if (profile?.email && UNLIMITED_USERS.includes(profile.email)) {
+    return { allowed: true }
+  }
+
+  // Get user plan for rate limiting
 
   // Check subscription
   if (profile?.subscription_status !== 'active') {

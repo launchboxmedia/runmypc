@@ -139,12 +139,12 @@ export default function BusinessFactsManager() {
     return `${baseUrl}/storage/v1/object/public/job-assets/${asset.file_path}`
   }
 
-  if (loading) return <div className="p-4">Loading...</div>
+  if (loading) return <div className="p-4 text-gray-900">Loading...</div>
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Business Facts & Assets</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Business Facts & Assets</h2>
         <button
           onClick={() => setShowAddFact(true)}
           className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700"
@@ -155,14 +155,14 @@ export default function BusinessFactsManager() {
 
       {showAddFact && (
         <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-          <h3 className="font-semibold mb-3">New Business Fact</h3>
+          <h3 className="font-semibold mb-3 text-gray-900">New Business Fact</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Type</label>
+              <label className="block text-sm font-medium mb-1 text-gray-700">Type</label>
               <select
                 value={newFact.type}
                 onChange={e => setNewFact({ ...newFact, type: e.target.value as BusinessFactType })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white"
               >
                 {FACT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -170,16 +170,16 @@ export default function BusinessFactsManager() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Content</label>
+              <label className="block text-sm font-medium mb-1 text-gray-700">Content</label>
               <textarea
                 value={newFact.content}
                 onChange={e => setNewFact({ ...newFact, content: e.target.value })}
                 placeholder="e.g., Increased credit score by 150 points in 90 days"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[80px]"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[80px] text-gray-900 bg-white"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="block text-sm font-medium mb-1 text-gray-700">
                 Service Tag (optional)
               </label>
               <input
@@ -187,7 +187,7 @@ export default function BusinessFactsManager() {
                 value={newFact.serviceTag}
                 onChange={e => setNewFact({ ...newFact, serviceTag: e.target.value })}
                 placeholder="e.g., credit_repair, business_funding"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white"
               />
             </div>
             <div className="flex gap-2">
@@ -203,7 +203,7 @@ export default function BusinessFactsManager() {
                   setShowAddFact(false)
                   setNewFact({ type: 'result', content: '', serviceTag: '' })
                 }}
-                className="bg-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300"
+                className="bg-gray-200 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-300"
               >
                 Cancel
               </button>
@@ -218,20 +218,20 @@ export default function BusinessFactsManager() {
           const pendingAssets = factAssets.filter(a => a.status === 'pending_review')
 
           return (
-            <div key={fact.id} className="border border-gray-200 rounded-lg p-4">
+            <div key={fact.id} className="border border-gray-200 rounded-lg p-4 bg-white">
               <div className="flex justify-between items-start mb-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                    <span className="text-xs bg-gray-100 text-gray-900 px-2 py-1 rounded">
                       {FACT_TYPES.find(t => t.value === fact.type)?.label}
                     </span>
                     {fact.service_tag && (
-                      <span className="text-xs bg-blue-100 px-2 py-1 rounded">
+                      <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded">
                         {fact.service_tag}
                       </span>
                     )}
                   </div>
-                  <p className="text-sm">{fact.content}</p>
+                  <p className="text-sm text-gray-900">{fact.content}</p>
                 </div>
                 <button
                   onClick={() => deleteFact(fact.id)}
@@ -250,7 +250,7 @@ export default function BusinessFactsManager() {
                       alt="Asset"
                       className="w-16 h-16 object-cover rounded"
                     />
-                    <div className="flex-1 text-sm">
+                    <div className="flex-1 text-sm text-gray-900">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded ${
                           asset.status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -283,8 +283,12 @@ export default function BusinessFactsManager() {
               </div>
 
               {/* Upload button */}
-              {uploadingFor === fact.id ? (
-                <div className="mt-3">
+              <div className="mt-3">
+                <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 cursor-pointer text-sm border border-blue-200">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Screenshot
                   <input
                     type="file"
                     accept="image/*"
@@ -292,23 +296,10 @@ export default function BusinessFactsManager() {
                       const file = e.target.files?.[0]
                       if (file) uploadAsset(fact.id, file)
                     }}
-                    className="text-sm"
+                    className="hidden"
                   />
-                  <button
-                    onClick={() => setUploadingFor(null)}
-                    className="ml-2 text-sm text-gray-600 hover:underline"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setUploadingFor(fact.id)}
-                  className="mt-3 text-sm text-blue-600 hover:underline"
-                >
-                  + Add Screenshot
-                </button>
-              )}
+                </label>
+              </div>
             </div>
           )
         })}
@@ -318,17 +309,17 @@ export default function BusinessFactsManager() {
       {reviewingAsset && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full p-6">
-            <h3 className="text-xl font-bold mb-4">Review Asset</h3>
+            <h3 className="text-xl font-bold mb-4 text-gray-900">Review Asset</h3>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <h4 className="font-semibold mb-2">Fact Content</h4>
-                <p className="text-sm bg-gray-50 p-3 rounded">
+                <h4 className="font-semibold mb-2 text-gray-900">Fact Content</h4>
+                <p className="text-sm bg-gray-50 p-3 rounded text-gray-900">
                   {facts.find(f => f.id === reviewingAsset.business_fact_id)?.content}
                 </p>
               </div>
               <div>
-                <h4 className="font-semibold mb-2">Screenshot</h4>
+                <h4 className="font-semibold mb-2 text-gray-900">Screenshot</h4>
                 <img
                   src={getAssetUrl(reviewingAsset)}
                   alt="Asset preview"
@@ -363,7 +354,7 @@ export default function BusinessFactsManager() {
               </button>
               <button
                 onClick={() => setReviewingAsset(null)}
-                className="bg-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300"
+                className="bg-gray-200 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-300"
               >
                 Cancel
               </button>

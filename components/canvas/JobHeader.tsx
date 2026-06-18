@@ -9,10 +9,22 @@ type Props = {
   mode: string
   status: string
   error?: string | null
+  onCancel?: () => void
 }
 
-export function JobHeader({ jobId, topic, targetAudience, outcome, mode, status, error }: Props) {
+export function JobHeader({ jobId, topic, targetAudience, outcome, mode, status, error, onCancel }: Props) {
   const startOverUrl = `/?topic=${encodeURIComponent(topic)}&audience=${encodeURIComponent(targetAudience || '')}&outcome=${encodeURIComponent(outcome || '')}`
+
+  async function handleCancel() {
+    if (!confirm('Cancel this job? It will stop all processing.')) return
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      if (!res.ok) throw new Error('Cancel failed')
+      onCancel?.()
+    } catch (err) {
+      alert('Failed to cancel job')
+    }
+  }
 
   return (
     <div className="sticky top-0 z-10 bg-black border-b border-gray-900 px-6 py-4">
@@ -47,10 +59,18 @@ export function JobHeader({ jobId, topic, targetAudience, outcome, mode, status,
           <Link href="/history" className="text-gray-500 hover:text-white text-sm">History</Link>
           <Link href="/profile" className="text-gray-500 hover:text-white text-sm">Profile</Link>
           {status === 'running' || status === 'queued' ? (
-            <span className="flex items-center gap-2 text-[#E8622A] text-sm">
-              <span className="w-2 h-2 rounded-full bg-[#E8622A] animate-pulse"/>
-              Running
-            </span>
+            <>
+              <span className="flex items-center gap-2 text-[#E8622A] text-sm">
+                <span className="w-2 h-2 rounded-full bg-[#E8622A] animate-pulse"/>
+                Running
+              </span>
+              <button
+                onClick={handleCancel}
+                className="px-3 py-1 text-xs border border-gray-700 text-gray-400 hover:border-red-600 hover:text-red-400 rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+            </>
           ) : status === 'completed' ? (
             <>
               <span className="text-green-400 text-sm">✓ Complete</span>
