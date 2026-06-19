@@ -864,29 +864,64 @@ Respond ONLY with JSON:
     await updateStep(supabase, jobId, 'generate-remotion-videos', 'skipped')
 
     // Step 7: Generate cinematic video
-    // NOTE: This step uses RunMyPC BRAND_ASSETS (DJ, b-boy, graffiti writer) because this is
-    // RunMyPC's product/marketing identity video, NOT customer-facing content.
+    // NOTE: This step uses RunMyPC BRAND_ASSETS (DJ, b-boy, graffiti writer) and is ONLY for
+    // RunMyPC's own internal marketing content, NOT customer jobs.
     // Customer videos (Steps 3, 4, 5) use ONLY the customer's own business_assets.
-    await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
-    await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
+    // ENFORCEMENT: Skip this step entirely for customer jobs.
 
-    try {
-      const { generateVideo } = await import('@/lib/atlascloud')
-      const { BRAND_ASSETS } = await import('@/lib/brandAssets')
+    // Get user profile to determine if this is RunMyPC's own job
+    const { data: profileCheck } = await supabase
+      .from('profiles')
+      .select('business_name')
+      .eq('id', job.user_id)
+      .single()
 
-      // Get user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_name, brand_tone')
-        .eq('id', job.user_id)
-        .single()
+    const isRunMyPCJob = !profileCheck?.business_name ||
+                         profileCheck.business_name.toLowerCase().includes('runmypc')
 
-      const businessName = profile?.business_name || 'RunMyPC'
-      const tone = profile?.brand_tone || 'bold'
+    if (!isRunMyPCJob) {
+      // Customer job — skip Step 7 cinematic video (RunMyPC branding not allowed)
+      await updateStep(supabase, jobId, 'generate-cinematic-video', 'skipped')
+    } else {
+      // RunMyPC's own marketing job — proceed with RunMyPC branding
+      await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
+      await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 
-      // Build cinematic prompt
-      const prompt = `A ${tone} cinematic vertical video for ${businessName}.
-Topic: ${job.topic}
+      try {
+        const { generateVideo } = await import('@/lib/atlascloud')
+        const { BRAND_ASSETS } = await import('@/lib/brandAssets')
+
+        const businessName = profileCheck?.business_name || 'RunMyPC'
+
+        // Fetch selected topics from niche research
+        const { data: researchOutput } = await supabase
+          .from('job_outputs')
+          .select('content, metadata')
+          .eq('job_id', jobId)
+          .eq('output_type', 'niche_research')
+          .single()
+
+        let selectedTopic = job.topic
+        if (researchOutput?.content) {
+          try {
+            const research = JSON.parse(researchOutput.content)
+            selectedTopic = research.selected_topics?.[0]?.title || job.topic
+          } catch {}
+        }
+
+        // Fetch business facts for context
+        const { data: businessFacts } = await supabase
+          .from('business_facts')
+          .select('content, type')
+          .eq('user_id', job.user_id)
+          .limit(5)
+
+        const factsContext = businessFacts?.map(f => f.content).join('; ').substring(0, 300) || ''
+
+        // Build cinematic prompt with FULL topic details (not generic)
+        const prompt = `A bold cinematic vertical video for ${businessName}.
+Topic: ${selectedTopic}
+${factsContext ? `Key context: ${factsContext}` : ''}
 Style: Hip hop culture aesthetic, orange outline character on black background,
 dynamic movement, professional and bold.
 The RunMyPC brand character moves fluidly.
@@ -940,11 +975,12 @@ No text overlay. Pure visual storytelling.`
         }
       }
 
-      await updateStep(supabase, jobId, 'generate-cinematic-video', 'completed')
-    } catch (err) {
-      console.error('Atlas Cloud cinematic video failed:', err)
-      await updateStep(supabase, jobId, 'generate-cinematic-video', 'failed')
-      // Don't throw — video failure shouldn't kill the job
+        await updateStep(supabase, jobId, 'generate-cinematic-video', 'completed')
+      } catch (err) {
+        console.error('Atlas Cloud cinematic video failed:', err)
+        await updateStep(supabase, jobId, 'generate-cinematic-video', 'failed')
+        // Don't throw — video failure shouldn't kill the job
+      }
     }
 
     // Update job to next phase
