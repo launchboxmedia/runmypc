@@ -20,7 +20,7 @@ export async function generateVideo(params: {
   const {
     prompt,
     referenceImageUrls = [],
-    model = 'kling-v2.0'
+    model = 'kwaivgi/kling-v3.0-pro/text-to-video'
   } = params
 
   // Start generation
@@ -33,16 +33,17 @@ export async function generateVideo(params: {
     body: JSON.stringify({
       model,
       prompt,
-      ...(referenceImageUrls.length > 0 && { image: referenceImageUrls[0] })
+      ...(referenceImageUrls.length > 0 && { image_url: referenceImageUrls[0] })
     })
   })
 
   if (!startRes.ok) {
     const error = await startRes.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(`Atlas Cloud error: ${error.error || startRes.status}`)
+    throw new Error(`Atlas Cloud error: ${error.msg || error.error || startRes.status}`)
   }
 
-  const { predictionId } = await startRes.json()
+  const response = await startRes.json()
+  const predictionId = response.data.id
 
   // Poll for completion
   let attempts = 0
@@ -51,18 +52,18 @@ export async function generateVideo(params: {
   while (attempts < maxAttempts) {
     await new Promise(resolve => setTimeout(resolve, 5000))
 
-    const statusRes = await fetch(`${ATLAS_BASE_URL}/model/getResult?predictionId=${predictionId}`, {
+    const statusRes = await fetch(`${ATLAS_BASE_URL}/model/prediction/${predictionId}`, {
       headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` }
     })
 
     const result = await statusRes.json()
 
-    if (result.status === 'succeeded' && result.output) {
-      return { id: predictionId, status: 'completed', output_url: result.output }
+    if (result.data.status === 'completed' && result.data.outputs?.[0]) {
+      return { id: predictionId, status: 'completed', output_url: result.data.outputs[0] }
     }
 
-    if (result.status === 'failed') {
-      return { id: predictionId, status: 'failed', error: result.error }
+    if (result.data.status === 'failed') {
+      return { id: predictionId, status: 'failed', error: result.data.error }
     }
 
     attempts++
@@ -79,7 +80,7 @@ export async function generateImage(params: {
 }): Promise<{ url: string }> {
   const {
     prompt,
-    model = 'flux-1.1-pro'
+    model = 'openai/gpt-image-2/text-to-image'
   } = params
 
   const res = await fetch(`${ATLAS_BASE_URL}/model/generateImage`, {
@@ -96,10 +97,11 @@ export async function generateImage(params: {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(`Atlas Cloud image error: ${error.error || res.status}`)
+    throw new Error(`Atlas Cloud image error: ${error.msg || error.error || res.status}`)
   }
 
-  const { predictionId } = await res.json()
+  const response = await res.json()
+  const predictionId = response.data.id
 
   // Poll for result
   let attempts = 0
@@ -108,18 +110,18 @@ export async function generateImage(params: {
   while (attempts < maxAttempts) {
     await new Promise(resolve => setTimeout(resolve, 2000))
 
-    const statusRes = await fetch(`${ATLAS_BASE_URL}/model/getResult?predictionId=${predictionId}`, {
+    const statusRes = await fetch(`${ATLAS_BASE_URL}/model/prediction/${predictionId}`, {
       headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` }
     })
 
     const result = await statusRes.json()
 
-    if (result.status === 'succeeded' && result.output) {
-      return { url: result.output }
+    if (result.data.status === 'completed' && result.data.outputs?.[0]) {
+      return { url: result.data.outputs[0] }
     }
 
-    if (result.status === 'failed') {
-      throw new Error(`Image generation failed: ${result.error || 'Unknown error'}`)
+    if (result.data.status === 'failed') {
+      throw new Error(`Image generation failed: ${result.data.error || 'Unknown error'}`)
     }
 
     attempts++
