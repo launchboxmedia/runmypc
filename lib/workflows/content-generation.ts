@@ -992,8 +992,8 @@ No text overlay. Pure visual storytelling.`
         prompt,
         referenceImageUrls: referenceImages,
         duration: 5,
-        aspectRatio: '9:16',
-        model: 'seedance-2.0-reference-to-video-fast'
+        aspectRatio: '9:16'
+        // Uses default kwaivgi/kling-v3.0-pro/text-to-video from atlascloud.ts
       })
 
       if (result.status === 'completed' && result.output_url) {
