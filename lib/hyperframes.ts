@@ -1,7 +1,7 @@
-// @ts-ignore - hyperframes has no types
-import { renderComposition } from 'hyperframes'
+import { execSync } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
+import { v4 as uuidv4 } from 'uuid'
 
 type VideoSpec = {
   platform: 'instagram' | 'tiktok' | 'youtube' | 'linkedin'
@@ -116,19 +116,22 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
   const htmlPath = path.join(tmpDir, `${platform}-${Date.now()}.html`)
   fs.writeFileSync(htmlPath, htmlContent)
 
-  // Render to video
-  const outputPath = path.join(tmpDir, `${platform}-${Date.now()}.mp4`)
+  // Render to video via hyperframes CLI
+  const outputPath = path.join(tmpDir, `${platform}-${uuidv4()}.mp4`)
 
-  await renderComposition({
-    htmlPath,
-    outputPath,
-    fps: 30,
-    duration: 6, // 6 seconds
-    concurrency: 4
-  })
-
-  // Cleanup HTML
-  fs.unlinkSync(htmlPath)
+  try {
+    // Invoke hyperframes CLI: npx hyperframes render <input> <output>
+    const cmd = `npx hyperframes render "${htmlPath}" "${outputPath}" --fps 30 --duration 6`
+    execSync(cmd, { stdio: 'inherit' })
+  } catch (error) {
+    console.error('Hyperframes render failed:', error)
+    throw new Error('Video generation failed')
+  } finally {
+    // Cleanup HTML
+    if (fs.existsSync(htmlPath)) {
+      fs.unlinkSync(htmlPath)
+    }
+  }
 
   return outputPath
 }
