@@ -750,13 +750,97 @@ Respond ONLY with JSON:
 
     // Step 5: Generate platform videos via Hyperframes
     await updateStep(supabase, jobId, 'generate-platform-videos', 'running')
+    await notifyStep(supabase, job.user_id, 'Generating platform videos', 'content_generation')
 
     try {
-      // TODO: Implement Hyperframes video generation
-      // For each platform (Instagram, TikTok, YouTube) generate branded motion graphics video
-      // using Hyperframes API with winning angle + brand colors
-      console.log('Platform videos via Hyperframes — coming soon')
-      await updateStep(supabase, jobId, 'generate-platform-videos', 'skipped')
+      // Get social posts
+      const { data: socialOutputs } = await supabase
+        .from('job_outputs')
+        .select('*')
+        .eq('job_id', jobId)
+        .eq('output_type', 'ad_copy')
+
+      if (!socialOutputs?.length) {
+        await updateStep(supabase, jobId, 'generate-platform-videos', 'skipped')
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('brand_colors, business_name, instagram_handle, tiktok_handle, youtube_handle, linkedin_url')
+          .eq('id', job.user_id)
+          .single()
+
+        const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
+        const businessName = profile?.business_name || 'RunMyPC'
+        const handles: Record<string, string> = {
+          instagram: profile?.instagram_handle || '',
+          tiktok: profile?.tiktok_handle || '',
+          youtube: profile?.youtube_handle || '',
+          linkedin: profile?.linkedin_url || ''
+        }
+
+        const posts = socialOutputs
+          .filter(o => o.metadata?.type === 'social_post')
+          .map(o => {
+            try {
+              const contentStr = o.content || '{}'
+              const contentMatch = contentStr.match(/\{[\s\S]*\}/)
+              const parsed = JSON.parse(contentMatch ? contentMatch[0] : contentStr)
+              return {
+                platform: o.platform || 'instagram',
+                hook: parsed.hook || '',
+                body: parsed.body || '',
+                cta: parsed.cta || ''
+              }
+            } catch {
+              return null
+            }
+          })
+          .filter(Boolean) as Array<{ platform: string; hook: string; body: string; cta: string }>
+
+        if (posts.length > 0) {
+          const { generateAllPlatformVideos } = await import('@/lib/hyperframes')
+          const videos = await generateAllPlatformVideos({
+            posts,
+            brandColor,
+            businessName,
+            handles
+          })
+
+          const { readFileSync, unlinkSync } = await import('fs')
+
+          for (const video of videos) {
+            try {
+              const fileBuffer = readFileSync(video.filePath)
+              const filename = `${job.user_id}/${jobId}/videos/${video.platform}-hyperframes-${Date.now()}.mp4`
+
+              const { error: uploadError } = await supabase.storage
+                .from('job-assets')
+                .upload(filename, fileBuffer, { contentType: 'video/mp4' })
+
+              if (!uploadError) {
+                const { data: urlData } = supabase.storage
+                  .from('job-assets')
+                  .getPublicUrl(filename)
+
+                await supabase.from('job_outputs').insert({
+                  job_id: jobId,
+                  output_type: 'platform_video',
+                  platform: video.platform,
+                  label: `${video.platform} Video`,
+                  url: urlData.publicUrl,
+                  metadata: { type: 'hyperframes_video', platform: video.platform }
+                })
+              }
+
+              unlinkSync(video.filePath)
+            } catch (err) {
+              console.error(`Failed to upload Hyperframes video for ${video.platform}:`, err)
+            }
+          }
+        }
+
+        await updateStep(supabase, jobId, 'generate-platform-videos', 'completed')
+      }
     } catch (err) {
       console.error('Platform video generation failed:', err)
       await updateStep(supabase, jobId, 'generate-platform-videos', 'failed')
