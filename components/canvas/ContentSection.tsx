@@ -29,7 +29,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const creatives = outputs.filter(o => o.output_type === 'static_creative' && o.platform !== 'instagram_carousel')
   const carousel = outputs.find(o => o.output_type === 'static_creative' && o.platform === 'instagram_carousel')
   const cinematicVideo = outputs.find(o => o.output_type === 'cinematic_video')
-  const videos = outputs.filter(o => o.output_type === 'social_video')
+  const videos = outputs.filter(o => o.output_type === 'social_video' || o.output_type === 'platform_video')
   const socialPosts = outputs.filter(o =>
     o.output_type === 'ad_copy' && o.metadata?.type === 'social_post'
   )
