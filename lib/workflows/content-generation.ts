@@ -156,13 +156,6 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
       )
     ].slice(0, 5)
 
-    // Fallback: add user's own Instagram handle if extraction yielded no results
-    if (instagramUsernames.length === 0 && profile?.instagram_handle) {
-      const cleanHandle = profile.instagram_handle.replace('@', '')
-      instagramUsernames.push(cleanHandle)
-      console.log(`No usernames extracted from hashtag — using profile handle: ${cleanHandle}`)
-    }
-
     console.log(`Extracted ${instagramUsernames.length} usernames:`, instagramUsernames)
 
     let instagramResults = instagramUsernames.length > 0
