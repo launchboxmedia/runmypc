@@ -601,7 +601,7 @@ Respond ONLY with JSON:
           console.log(`Generating ${spec.platform} creative via Atlas Cloud...`)
           const result = await generateImage({
             prompt: spec.prompt,
-            model: 'gpt-image-2',
+            // model param ignored - atlascloud.ts uses default
             size: spec.size
           })
 
