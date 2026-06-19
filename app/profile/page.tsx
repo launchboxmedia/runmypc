@@ -126,7 +126,8 @@ export default function ProfilePage() {
         audience_outcome: profile.audience_outcome,
         flipbookpro_api_key: profile.flipbookpro_api_key,
         telegram_chat_id: profile.telegram_chat_id,
-        webhook_url: profile.webhook_url
+        webhook_url: profile.webhook_url,
+        research_instagram_usernames: profile.research_instagram_usernames
       })
       .eq('id', profile.id)
 
