@@ -778,6 +778,16 @@ Respond ONLY with JSON:
           linkedin: profile?.linkedin_url || ''
         }
 
+        // Fetch approved business assets for video composition
+        // Filter by service_tag if job has one (multi-service businesses)
+        const { data: businessAssets } = await supabase
+          .from('business_assets')
+          .select('*')
+          .eq('user_id', job.user_id)
+          .eq('status', 'approved')
+          .in('usable_in', ['video', 'both'])
+          .is('service_tag', job.service_tag || null)
+
         const posts = socialOutputs
           .filter(o => o.metadata?.type === 'social_post')
           .map(o => {
@@ -803,7 +813,8 @@ Respond ONLY with JSON:
             posts,
             brandColor,
             businessName,
-            handles
+            handles,
+            businessAssets: businessAssets || []
           })
 
           const { readFileSync, unlinkSync } = await import('fs')
@@ -846,115 +857,16 @@ Respond ONLY with JSON:
       await updateStep(supabase, jobId, 'generate-platform-videos', 'failed')
     }
 
-    // Step 6: Generate Remotion social videos
-    await updateStep(supabase, jobId, 'generate-remotion-videos', 'running')
-    await notifyStep(supabase, job.user_id, 'Rendering social videos', 'content_generation')
-
-    try {
-      // Get generated social posts
-      const { data: socialOutputs } = await supabase
-        .from('job_outputs')
-        .select('*')
-        .eq('job_id', jobId)
-        .eq('output_type', 'ad_copy')
-
-      if (!socialOutputs?.length) {
-        await updateStep(supabase, jobId, 'generate-remotion-videos', 'completed')
-      } else {
-        // Get user profile for brand data
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('brand_colors, business_name, instagram_handle, tiktok_handle, youtube_handle, linkedin_url')
-          .eq('id', job.user_id)
-          .single()
-
-        // Parse first color from brand_colors
-        const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
-        const businessName = profile?.business_name || 'RunMyPC'
-
-        const handles: Record<string, string> = {
-          instagram: profile?.instagram_handle || '',
-          tiktok: profile?.tiktok_handle || '',
-          youtube: profile?.youtube_handle || '',
-          linkedin: profile?.linkedin_url || ''
-        }
-
-        // Parse posts
-        const posts = socialOutputs
-          .filter(o => o.metadata?.type === 'social_post')
-          .map(o => {
-            try {
-              const contentStr = o.content || '{}'
-              const contentMatch = contentStr.match(/\{[\s\S]*\}/)
-              const parsed = JSON.parse(contentMatch ? contentMatch[0] : contentStr)
-              return {
-                platform: o.platform || 'instagram',
-                hook: parsed.hook || '',
-                body: parsed.body || '',
-                cta: parsed.cta || ''
-              }
-            } catch {
-              return null
-            }
-          })
-          .filter(Boolean) as Array<{ platform: string; hook: string; body: string; cta: string }>
-
-        if (posts.length > 0) {
-          // Render videos
-          const { renderAllPlatformVideos } = await import('@/lib/remotionRender')
-          const renderedVideos = await renderAllPlatformVideos({
-            posts,
-            brandColor,
-            businessName,
-            handles,
-            jobId,
-            userId: job.user_id
-          })
-
-          // Upload to Supabase Storage
-          const { readFileSync, unlinkSync } = await import('fs')
-
-          for (const video of renderedVideos) {
-            try {
-              const fileBuffer = readFileSync(video.filePath)
-              const filename = `${job.user_id}/${jobId}/videos/${video.platform}-${Date.now()}.mp4`
-
-              const { error: uploadError } = await supabase.storage
-                .from('job-assets')
-                .upload(filename, fileBuffer, { contentType: 'video/mp4' })
-
-              if (!uploadError) {
-                const { data: urlData } = supabase.storage
-                  .from('job-assets')
-                  .getPublicUrl(filename)
-
-                await supabase.from('job_outputs').insert({
-                  job_id: jobId,
-                  output_type: 'social_video',
-                  platform: video.platform,
-                  label: `${video.platform} Video`,
-                  url: urlData.publicUrl,
-                  metadata: { type: 'remotion_video', platform: video.platform }
-                })
-              }
-
-              // Cleanup temp file
-              unlinkSync(video.filePath)
-            } catch (err) {
-              console.error(`Failed to upload video for ${video.platform}:`, err)
-            }
-          }
-        }
-
-        await updateStep(supabase, jobId, 'generate-remotion-videos', 'completed')
-      }
-    } catch (err) {
-      console.error('Remotion video generation failed:', err)
-      await updateStep(supabase, jobId, 'generate-remotion-videos', 'failed')
-      // Don't throw — video failure shouldn't kill the whole job
-    }
+    // Step 6: Remotion motion-video generation — CANCELLED
+    // Reasoning: Hyperframes (Step 5) serves the same platform-video role.
+    // Remotion stays in the stack only for carousel static rendering (Step 4).
+    // No AWS Lambda setup needed for this cancelled step.
+    await updateStep(supabase, jobId, 'generate-remotion-videos', 'skipped')
 
     // Step 7: Generate cinematic video
+    // NOTE: This step uses RunMyPC BRAND_ASSETS (DJ, b-boy, graffiti writer) because this is
+    // RunMyPC's product/marketing identity video, NOT customer-facing content.
+    // Customer videos (Steps 3, 4, 5) use ONLY the customer's own business_assets.
     await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
     await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 

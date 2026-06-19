@@ -1,3 +1,9 @@
+// Hyperframes Video Generation
+// STATUS: Installed, asset-compositing NOT YET VALIDATED
+// Hyperframes CLI connected via subprocess. Has NOT produced a real video using
+// actual user/business assets. Not production-ready until end-to-end asset
+// compositing works with real uploaded assets.
+
 import { execSync } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -11,10 +17,11 @@ type VideoSpec = {
   brandColor: string
   businessName: string
   handle: string
+  businessAssets?: BusinessAsset[]
 }
 
 export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
-  const { platform, hook, body, cta, brandColor, businessName, handle } = spec
+  const { platform, hook, body, cta, brandColor, businessName, handle, businessAssets = [] } = spec
 
   // Platform-specific dimensions
   const dimensions = {
@@ -25,6 +32,11 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
   }
 
   const { width, height } = dimensions[platform]
+
+  // CRITICAL: businessAssets are the CUSTOMER'S uploaded assets (logo, product photos, results).
+  // RunMyPC's brand characters (DJ, b-boy, graffiti writer) are product/marketing identity only.
+  // NEVER composite RunMyPC branding into customer video content.
+  const assetUrl = businessAssets.length > 0 ? businessAssets[0].file_path : null
 
   // Create temp HTML composition
   const htmlContent = `
@@ -39,6 +51,17 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
       width: ${width}px;
       height: ${height}px;
       overflow: hidden;
+      position: relative;
+    }
+    .asset-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.3;
+      z-index: 0;
     }
     #stage {
       width: 100%;
@@ -50,6 +73,8 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
       padding: 80px;
       color: white;
       text-align: center;
+      position: relative;
+      z-index: 1;
     }
     .hook {
       font-size: 72px;
@@ -97,6 +122,7 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
   </style>
 </head>
 <body>
+  ${assetUrl ? `<img class="asset-bg" src="${assetUrl}" alt="Business asset background" />` : ''}
   <div id="stage" data-composition-id="${platform}-video" data-start="0" data-width="${width}" data-height="${height}">
     <div class="hook clip" data-start="0" data-duration="6">${hook}</div>
     <div class="body clip" data-start="1" data-duration="6">${body.substring(0, 200)}</div>
@@ -136,13 +162,21 @@ export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
   return outputPath
 }
 
+type BusinessAsset = {
+  id: string
+  file_path: string
+  file_type: string
+  usable_in: 'static' | 'video' | 'both'
+}
+
 export async function generateAllPlatformVideos(specs: {
   posts: Array<{ platform: string; hook: string; body: string; cta: string }>
   brandColor: string
   businessName: string
   handles: Record<string, string>
+  businessAssets?: BusinessAsset[]
 }): Promise<Array<{ platform: string; filePath: string }>> {
-  const { posts, brandColor, businessName, handles } = specs
+  const { posts, brandColor, businessName, handles, businessAssets = [] } = specs
 
   const results: Array<{ platform: string; filePath: string }> = []
 
@@ -164,7 +198,8 @@ export async function generateAllPlatformVideos(specs: {
       cta: post.cta,
       brandColor,
       businessName,
-      handle: handles[platform] || `@${businessName.toLowerCase()}`
+      handle: handles[platform] || `@${businessName.toLowerCase()}`,
+      businessAssets
     })
 
     results.push({ platform, filePath: videoPath })
