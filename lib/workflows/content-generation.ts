@@ -93,13 +93,13 @@ ${profile.brand_voice_examples ? `Voice examples:\n${profile.brand_voice_example
 
     const { anthropic } = getClients()
 
-    // Step 0: Niche classification + term extraction
+    // Step 0: Semantic expansion - convert flat term into platform-optimized variants
     const extractionResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+      max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Extract 3-5 precise search terms and classify this niche.
+        content: `Analyze this niche and generate platform-optimized search terms. Use colloquial language creators actually use - hooks, hacks, secrets, tips are all valid.
 
 Topic: ${job.topic}
 Target audience: ${job.target_audience || ''}
@@ -107,21 +107,41 @@ What they learn: ${job.outcome || ''}
 
 Respond ONLY with JSON:
 {
-  "terms": ["term1", "term2", "term3"],
-  "is_b2b": boolean
+  "is_b2b": boolean,
+  "social_keywords": ["exactly 3 search phrases for TikTok/YouTube"],
+  "hashtags": ["exactly 3 hashtags without # symbol for Instagram"],
+  "reddit_queries": ["exactly 2 search phrases for site-wide old.reddit.com"]
 }
 
-is_b2b = true if niche targets businesses/professionals (consulting, B2B SaaS, corporate training, business funding, etc)
-is_b2b = false if niche targets consumers (credit repair, fitness, personal finance, dating, etc)`
+Requirements:
+- Use how real people talk and search in this niche (emotional symptoms, tactics, slang)
+- NOT clinical industry terms unless that's genuinely how the audience searches
+- Fixed caps: 3 social keywords, 3 hashtags, 2 Reddit queries
+- Reddit queries find topic/question threads, default to site-wide search
+- is_b2b = true only if targeting businesses/professionals
+
+No examples provided - reason fresh per niche.`
       }]
     })
 
     const extractionText = extractionResponse.content[0].type === 'text' ? extractionResponse.content[0].text : '{}'
     const jsonMatch = extractionText.match(/\{[\s\S]*\}/)
     const extraction = JSON.parse(jsonMatch ? jsonMatch[0] : '{}')
-    const terms = extraction.terms || [job.topic]
     const isB2B = extraction.is_b2b || false
-    const primaryTerm = terms[0] || job.topic
+
+    // Extract with fallbacks to raw topic
+    const socialKeywords = (extraction.social_keywords || []).slice(0, 3)
+    if (socialKeywords.length === 0) socialKeywords.push(job.topic)
+
+    const hashtags = (extraction.hashtags || []).slice(0, 3)
+    if (hashtags.length === 0) hashtags.push(job.topic.replace(/\s+/g, ''))
+
+    const redditQueries = (extraction.reddit_queries || []).slice(0, 2)
+    if (redditQueries.length === 0) redditQueries.push(job.topic)
+
+    const primaryTerm = socialKeywords[0]
+
+    console.log('Semantic expansion:', { socialKeywords, hashtags, redditQueries, isB2B })
 
     // LAYER 1 — Search Intent via Autocomplete
     const { runApifyActor } = await import('@/lib/apify')
@@ -132,9 +152,9 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
     }).catch(() => [])
 
     // LAYER 2 — Social content scraping (parallel)
-    // Instagram: try hashtag → usernames → reels, fallback to direct hashtag scraper
+    // Instagram: use semantic hashtags for better content discovery
     const instagramHashtagResults = await runApifyActor('apify/instagram-hashtag-scraper', {
-      hashtags: [primaryTerm.replace(/\s+/g, '')],
+      hashtags: hashtags,
       resultsLimit: 30
     }).catch(() => [])
 
@@ -181,17 +201,37 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
     }
 
     const [tiktokResults, youtubeResults, linkedinResults, redditResults, newsResults] = await Promise.all([
-      // TikTok
-      runApifyActor('clockworks/tiktok-scraper', {
-        hashtags: [primaryTerm.replace(/\s+/g, '')],
-        resultsPerPage: 15
-      }).catch(() => []),
+      // TikTok - use social keywords with fallback
+      (async () => {
+        for (const keyword of socialKeywords) {
+          const results = await runApifyActor('clockworks/tiktok-scraper', {
+            hashtags: [keyword.replace(/\s+/g, '')],
+            resultsPerPage: 15
+          }).catch(() => [])
+          if (results.length > 0) {
+            console.log(`TikTok scraper succeeded with keyword: ${keyword}`)
+            return results
+          }
+        }
+        console.log('TikTok scraper: all keywords returned 0 results')
+        return []
+      })(),
 
-      // YouTube
-      runApifyActor('streamers/youtube-scraper', {
-        searchQueries: [primaryTerm],
-        maxResults: 15
-      }).catch(() => []),
+      // YouTube - use social keywords with fallback
+      (async () => {
+        for (const keyword of socialKeywords) {
+          const results = await runApifyActor('streamers/youtube-scraper', {
+            searchQueries: [keyword],
+            maxResults: 15
+          }).catch(() => [])
+          if (results.length > 0) {
+            console.log(`YouTube scraper succeeded with keyword: ${keyword}`)
+            return results
+          }
+        }
+        console.log('YouTube scraper: all keywords returned 0 results')
+        return []
+      })(),
 
       // LinkedIn (only if B2B)
       isB2B
@@ -201,24 +241,31 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
           }).catch(() => [])
         : Promise.resolve([]),
 
-      // Reddit via Firecrawl
+      // Reddit via Firecrawl - use reddit_queries with fallback
       (async () => {
         try {
           const { scrapeUrl } = await import('@/lib/firecrawl')
-          const redditUrl = `https://old.reddit.com/search?q=${encodeURIComponent(primaryTerm)}&sort=relevance&t=month`
-          const scraped = await scrapeUrl(redditUrl)
+          for (const query of redditQueries) {
+            const redditUrl = `https://old.reddit.com/search?q=${encodeURIComponent(query)}&sort=relevance&t=month`
+            const scraped = await scrapeUrl(redditUrl)
 
-          // Extract thread titles + selftext from markdown
-          const threads = scraped.content
-            .split('\n\n')
-            .filter(block => block.includes('r/') || block.includes('comments'))
-            .slice(0, 10)
-            .map(block => ({
-              title: block.split('\n')[0] || '',
-              selftext: block.split('\n').slice(1).join(' ').slice(0, 500)
-            }))
+            // Extract thread titles + selftext from markdown
+            const threads = scraped.content
+              .split('\n\n')
+              .filter(block => block.includes('r/') || block.includes('comments'))
+              .slice(0, 10)
+              .map(block => ({
+                title: block.split('\n')[0] || '',
+                selftext: block.split('\n').slice(1).join(' ').slice(0, 500)
+              }))
 
-          return threads
+            if (threads.length > 0) {
+              console.log(`Reddit scraper succeeded with query: ${query}`)
+              return threads
+            }
+          }
+          console.log('Reddit scraper: all queries returned 0 results')
+          return []
         } catch {
           return []
         }
@@ -375,7 +422,7 @@ Respond ONLY with JSON:
       platform: null,
       label: 'Content Research Intelligence',
       content: JSON.stringify({
-        niche_classification: { is_b2b: isB2B, terms },
+        niche_classification: { is_b2b: isB2B, social_keywords: socialKeywords, hashtags, reddit_queries: redditQueries },
         selected_topics: selectedTopics,
         format_reference: formatData,
         sources_analyzed: {
