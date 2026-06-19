@@ -10,6 +10,30 @@ type VideoGenerationResult = {
   error?: string
 }
 
+export async function uploadMedia(imageUrl: string): Promise<string> {
+  // Download image
+  const imageRes = await fetch(imageUrl)
+  const imageBlob = await imageRes.blob()
+
+  // Upload to Atlas
+  const formData = new FormData()
+  formData.append('file', imageBlob)
+
+  const uploadRes = await fetch(`${ATLAS_BASE_URL}/model/uploadMedia`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` },
+    body: formData
+  })
+
+  if (!uploadRes.ok) {
+    const error = await uploadRes.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(`Atlas upload error: ${error.msg || error.error || uploadRes.status}`)
+  }
+
+  const { url } = await uploadRes.json()
+  return url
+}
+
 export async function generateVideo(params: {
   prompt: string
   referenceImageUrls?: string[]
@@ -23,6 +47,12 @@ export async function generateVideo(params: {
     model = 'kwaivgi/kling-v3.0-pro/text-to-video'
   } = params
 
+  // Upload reference image if provided
+  let atlasImageUrl: string | undefined
+  if (referenceImageUrls.length > 0) {
+    atlasImageUrl = await uploadMedia(referenceImageUrls[0])
+  }
+
   // Start generation
   const startRes = await fetch(`${ATLAS_BASE_URL}/model/generateVideo`, {
     method: 'POST',
@@ -33,7 +63,7 @@ export async function generateVideo(params: {
     body: JSON.stringify({
       model,
       prompt,
-      ...(referenceImageUrls.length > 0 && { image_url: referenceImageUrls[0] })
+      ...(atlasImageUrl && { image_url: atlasImageUrl })
     })
   })
 
