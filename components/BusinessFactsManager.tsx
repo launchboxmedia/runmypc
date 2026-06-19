@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import type { BusinessFact, BusinessAsset, BusinessFactType } from '@/types/business'
 
 const FACT_TYPES: { value: BusinessFactType; label: string }[] = [
@@ -15,6 +16,7 @@ const FACT_TYPES: { value: BusinessFactType; label: string }[] = [
 export default function BusinessFactsManager() {
   const [facts, setFacts] = useState<BusinessFact[]>([])
   const [assets, setAssets] = useState<BusinessAsset[]>([])
+  const [assetUrls, setAssetUrls] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [showAddFact, setShowAddFact] = useState(false)
   const [newFact, setNewFact] = useState({
@@ -39,11 +41,31 @@ export default function BusinessFactsManager() {
       const assetsData = await assetsRes.json()
       setFacts(factsData)
       setAssets(assetsData)
+
+      // Generate signed URLs for all assets
+      await generateAssetUrls(assetsData)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  async function generateAssetUrls(assetList: BusinessAsset[]) {
+    const supabase = createClient()
+    const urls: Record<string, string> = {}
+
+    for (const asset of assetList) {
+      const { data } = await supabase.storage
+        .from('job-assets')
+        .createSignedUrl(asset.file_path, 3600) // 1 hour expiry
+
+      if (data?.signedUrl) {
+        urls[asset.id] = data.signedUrl
+      }
+    }
+
+    setAssetUrls(urls)
   }
 
   async function addFact() {
@@ -135,8 +157,7 @@ export default function BusinessFactsManager() {
   }
 
   function getAssetUrl(asset: BusinessAsset): string {
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    return `${baseUrl}/storage/v1/object/public/job-assets/${asset.file_path}`
+    return assetUrls[asset.id] || ''
   }
 
   if (loading) return <div className="p-4 text-gray-900">Loading...</div>
