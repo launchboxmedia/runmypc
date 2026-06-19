@@ -641,18 +641,22 @@ Respond ONLY with JSON:
                                  spec.prompt.toLowerCase().includes('proof')
 
         let finalUrl: string
+        let storagePath: string
         let metadata: any = { type: 'static_creative', size: spec.size }
 
         if (isResultCreative && resultAssets.length > 0) {
           // Use real uploaded asset instead of generating
           const asset = resultAssets[0] // Use first approved result asset
-          const { data: urlData } = supabase.storage
-            .from('job-assets')
-            .getPublicUrl(asset.file_path)
+          storagePath = asset.file_path
 
-          finalUrl = urlData.publicUrl
+          const { data: urlData } = await supabase.storage
+            .from('job-assets')
+            .createSignedUrl(storagePath, 3600) // 1 hour expiry
+
+          finalUrl = urlData?.signedUrl || ''
           metadata.used_real_asset = true
           metadata.asset_id = asset.id
+          metadata.storage_path = storagePath
         } else {
           // Generate creative via GPT-Image-2
           console.log(`Generating ${spec.platform} creative via Atlas Cloud...`)
@@ -678,11 +682,13 @@ Respond ONLY with JSON:
 
           if (error) continue
 
-          const { data: urlData } = supabase.storage
+          storagePath = filename
+          const { data: urlData } = await supabase.storage
             .from('job-assets')
-            .getPublicUrl(filename)
+            .createSignedUrl(storagePath, 3600) // 1 hour expiry
 
-          finalUrl = urlData.publicUrl
+          finalUrl = urlData?.signedUrl || ''
+          metadata.storage_path = storagePath
         }
 
         await supabase.from('job_outputs').insert({

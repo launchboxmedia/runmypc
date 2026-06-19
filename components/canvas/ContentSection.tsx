@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { ResearchSection } from './ResearchSection'
 
 type JobOutput = {
@@ -23,6 +24,34 @@ const PLATFORMS = ['instagram', 'tiktok', 'youtube', 'linkedin']
 
 export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const [activeTab, setActiveTab] = useState('instagram')
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    async function generateSignedUrls() {
+      const supabase = createClient()
+      const urls: Record<string, string> = {}
+
+      for (const output of outputs) {
+        // Only generate for outputs with storage_path in metadata
+        const storagePath = output.metadata?.storage_path
+        if (!storagePath) continue
+
+        const { data } = await supabase.storage
+          .from('job-assets')
+          .createSignedUrl(storagePath, 3600) // 1 hour expiry
+
+        if (data?.signedUrl) {
+          urls[output.id] = data.signedUrl
+        }
+      }
+
+      setSignedUrls(urls)
+    }
+
+    if (isActive) {
+      generateSignedUrls()
+    }
+  }, [outputs, isActive])
 
   if (!isActive) return null
 
@@ -34,6 +63,9 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
     o.output_type === 'ad_copy' && o.metadata?.type === 'social_post'
   )
   const platformPosts = socialPosts.filter(p => p.platform === activeTab)
+
+  // Helper to get URL: prefer signed URL, fall back to stored URL
+  const getOutputUrl = (output: JobOutput) => signedUrls[output.id] || output.url
 
   return (
     <div className="mb-16">
@@ -115,31 +147,34 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
               <div key={i} className="w-28 h-28 bg-gray-900 rounded-lg animate-pulse border border-gray-800"/>
             ))
           ) : (
-            creatives.map(creative => (
-              <div key={creative.id} className="relative group w-28 h-28">
-                <div className="w-full h-full bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
-                  {creative.url && (
-                    <img
-                      src={creative.url}
-                      alt={creative.label}
-                      className="w-full h-full object-cover"
-                    />
+            creatives.map(creative => {
+              const imageUrl = getOutputUrl(creative)
+              return (
+                <div key={creative.id} className="relative group w-28 h-28">
+                  <div className="w-full h-full bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+                    {imageUrl && (
+                      <img
+                        src={imageUrl}
+                        alt={creative.label}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
+                  {imageUrl && (
+                    <a
+                      href={imageUrl}
+                      download
+                      className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs text-white font-bold rounded-lg"
+                    >
+                      Download
+                    </a>
                   )}
+                  <p className="text-xs text-gray-600 mt-1 text-center truncate">
+                    {creative.platform}
+                  </p>
                 </div>
-                {creative.url && (
-                  <a
-                    href={creative.url}
-                    download
-                    className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs text-white font-bold rounded-lg"
-                  >
-                    Download
-                  </a>
-                )}
-                <p className="text-xs text-gray-600 mt-1 text-center truncate">
-                  {creative.platform}
-                </p>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
