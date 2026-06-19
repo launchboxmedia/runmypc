@@ -44,7 +44,7 @@ export async function generateVideo(params: {
   const {
     prompt,
     referenceImageUrls = [],
-    model = 'kwaivgi/kling-v3.0-pro/text-to-video'
+    model = 'bytedance/seedance-2.0/text-to-video'
   } = params
 
   // Upload reference image if provided
