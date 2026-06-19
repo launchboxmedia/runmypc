@@ -143,7 +143,7 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
       console.log('Sample hashtag result fields:', Object.keys(instagramHashtagResults[0]))
     }
 
-    const instagramUsernames = [
+    let instagramUsernames = [
       ...new Set(
         instagramHashtagResults
           .slice(0, 10)
@@ -155,6 +155,16 @@ is_b2b = false if niche targets consumers (credit repair, fitness, personal fina
           .filter(Boolean)
       )
     ].slice(0, 5)
+
+    // Fallback: use profile research usernames if extraction yielded no results
+    if (instagramUsernames.length === 0 && profile?.research_instagram_usernames) {
+      instagramUsernames = profile.research_instagram_usernames
+        .split(',')
+        .map((u: string) => u.trim().replace('@', ''))
+        .filter(Boolean)
+        .slice(0, 5)
+      console.log(`No usernames from hashtag — using profile research usernames: ${instagramUsernames.join(', ')}`)
+    }
 
     console.log(`Extracted ${instagramUsernames.length} usernames:`, instagramUsernames)
 

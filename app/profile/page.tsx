@@ -29,6 +29,7 @@ type Profile = {
   flipbookpro_api_key: string | null
   telegram_chat_id: string | null
   webhook_url: string | null
+  research_instagram_usernames: string | null
 }
 
 const TONE_OPTIONS = [
@@ -258,6 +259,9 @@ export default function ProfilePage() {
           </Field>
           <Field label="LinkedIn">
             <Input value={profile.linkedin_url || ''} onChange={v => update('linkedin_url', v)} placeholder="https://linkedin.com/in/yourprofile" />
+          </Field>
+          <Field label="Research Instagram Usernames" hint="Influencers/competitors to scrape for content research (comma-separated)">
+            <Input value={profile.research_instagram_usernames || ''} onChange={v => update('research_instagram_usernames', v)} placeholder="@influencer1, @influencer2, @competitor" />
           </Field>
         </Section>
 
