@@ -3,6 +3,13 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+type BusinessAsset = {
+  id: string
+  asset_type: string | null
+  file_path: string
+  usable_in: string
+}
+
 export default function Home() {
   const [topic, setTopic] = useState('')
   const [targetAudience, setTargetAudience] = useState('')
@@ -11,6 +18,9 @@ export default function Home() {
   const [flipbookproUrl, setFlipbookproUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [approvedAssets, setApprovedAssets] = useState<BusinessAsset[]>([])
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+  const [assetSignedUrls, setAssetSignedUrls] = useState<Record<string, string>>({})
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -40,6 +50,27 @@ export default function Home() {
         if (!targetAudience && profile.audience_description) setTargetAudience(profile.audience_description)
         if (!outcome && profile.audience_outcome) setOutcome(profile.audience_outcome)
       }
+
+      // Load approved assets
+      const { data: assets } = await supabase
+        .from('business_assets')
+        .select('id, asset_type, file_path, usable_in')
+        .eq('user_id', user.id)
+        .eq('status', 'approved')
+
+      if (assets) {
+        setApprovedAssets(assets)
+
+        // Generate signed URLs for thumbnails
+        const urls: Record<string, string> = {}
+        for (const asset of assets) {
+          const { data: signedData } = await supabase.storage
+            .from('job-assets')
+            .createSignedUrl(asset.file_path, 3600)
+          if (signedData?.signedUrl) urls[asset.id] = signedData.signedUrl
+        }
+        setAssetSignedUrls(urls)
+      }
     }
     loadProfile()
   }, [])
@@ -57,7 +88,8 @@ export default function Home() {
         target_audience: targetAudience,
         outcome,
         mode,
-        flipbookpro_url: flipbookproUrl || null
+        flipbookpro_url: flipbookproUrl || null,
+        selected_asset_ids: selectedAssetIds
       })
     })
 
@@ -70,6 +102,14 @@ export default function Home() {
     }
 
     router.push(`/jobs/${data.jobId}`)
+  }
+
+  function toggleAsset(assetId: string) {
+    setSelectedAssetIds(prev =>
+      prev.includes(assetId)
+        ? prev.filter(id => id !== assetId)
+        : [...prev, assetId]
+    )
   }
 
   return (
@@ -140,6 +180,52 @@ export default function Home() {
             className="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-white placeholder-gray-600 focus:outline-none focus:border-[#E8622A] resize-none"
           />
         </div>
+
+        {/* Asset Selection */}
+        {approvedAssets.length > 0 && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-400 mb-3 uppercase tracking-widest">
+              Select Assets for This Run (Optional)
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {approvedAssets.map(asset => (
+                <button
+                  key={asset.id}
+                  onClick={() => toggleAsset(asset.id)}
+                  className={`relative aspect-square rounded-lg border-2 overflow-hidden transition-all ${
+                    selectedAssetIds.includes(asset.id)
+                      ? 'border-[#E8622A] ring-2 ring-[#E8622A]/50'
+                      : 'border-gray-700 hover:border-gray-500'
+                  }`}
+                >
+                  {assetSignedUrls[asset.id] && (
+                    <img
+                      src={assetSignedUrls[asset.id]}
+                      alt={asset.asset_type || 'asset'}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/80 p-2">
+                    <p className="text-xs text-gray-400 truncate">
+                      {asset.asset_type || 'asset'}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {asset.usable_in}
+                    </p>
+                  </div>
+                  {selectedAssetIds.includes(asset.id) && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-[#E8622A] rounded-full flex items-center justify-center text-white text-xs font-bold">
+                      ✓
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-600 mt-2">
+              {selectedAssetIds.length} asset{selectedAssetIds.length !== 1 ? 's' : ''} selected
+            </p>
+          </div>
+        )}
 
         {/* Mode Selection */}
         <div className="mb-6">

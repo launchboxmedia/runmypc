@@ -582,13 +582,25 @@ Respond ONLY with JSON:
 
     const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
 
-    // Fetch approved business assets for result-based creatives
-    const { getBusinessAssets } = await import('@/lib/businessFacts')
-    const approvedAssets = await getBusinessAssets(job.user_id, { status: 'approved' })
+    // Fetch selected business assets for static creatives
+    // Only use assets explicitly selected for this job
+    const { data: selectedAssetJoins } = await supabase
+      .from('job_selected_assets')
+      .select('asset_id, business_assets!inner(*)')
+      .eq('job_id', jobId)
+
+    const selectedAssets = selectedAssetJoins
+      ?.map((join: any) => join.business_assets)
+      .filter((asset: any) =>
+        asset &&
+        asset.status === 'approved' &&
+        (asset.usable_in === 'static' || asset.usable_in === 'both')
+      ) || []
+
     const resultFacts = businessFacts.filter(f => f.type === 'result')
 
-    // Get assets linked to result facts
-    const resultAssets = approvedAssets.filter(a =>
+    // Get assets linked to result facts (from selected assets only)
+    const resultAssets = selectedAssets.filter(a =>
       a.business_fact_id && resultFacts.some(f => f.id === a.business_fact_id)
     )
 
@@ -841,15 +853,20 @@ Respond ONLY with JSON:
           linkedin: profile?.linkedin_url || ''
         }
 
-        // Fetch approved business assets for video composition
-        // Filter by service_tag if job has one (multi-service businesses)
-        const { data: businessAssets } = await supabase
-          .from('business_assets')
-          .select('*')
-          .eq('user_id', job.user_id)
-          .eq('status', 'approved')
-          .in('usable_in', ['video', 'both'])
-          .is('service_tag', job.service_tag || null)
+        // Fetch selected business assets for video composition
+        // Only use assets explicitly selected for this job
+        const { data: selectedAssetJoins } = await supabase
+          .from('job_selected_assets')
+          .select('asset_id, business_assets!inner(*)')
+          .eq('job_id', jobId)
+
+        const businessAssets = selectedAssetJoins
+          ?.map((join: any) => join.business_assets)
+          .filter((asset: any) =>
+            asset &&
+            asset.status === 'approved' &&
+            (asset.usable_in === 'video' || asset.usable_in === 'both')
+          ) || []
 
         const posts = socialOutputs
           .filter(o => o.metadata?.type === 'social_post')

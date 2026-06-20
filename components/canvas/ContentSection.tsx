@@ -89,7 +89,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
           <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">Hero Video</p>
           <div className="relative rounded-lg overflow-hidden border border-gray-800" style={{ maxWidth: 240 }}>
             <video
-              src={cinematicVideo.url || ''}
+              src={getOutputUrl(cinematicVideo) || ''}
               className="w-full"
               controls
               muted
@@ -99,8 +99,8 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
             />
             <div className="p-3 flex items-center justify-between bg-gray-900">
               <p className="text-xs text-gray-400">Cinematic Hero</p>
-              {cinematicVideo.url && (
-                <a href={cinematicVideo.url} download className="text-xs text-[#E8622A] hover:underline">
+              {getOutputUrl(cinematicVideo) && (
+                <a href={getOutputUrl(cinematicVideo) || undefined} download className="text-xs text-[#E8622A] hover:underline">
                   Download
                 </a>
               )}
@@ -184,31 +184,34 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
         <div className="mb-8">
           <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">Videos</p>
           <div className="flex gap-3 flex-wrap">
-            {videos.map(video => (
-              <div key={video.id} className="relative group">
-                <div className="w-40 h-72 bg-gray-900 rounded-lg border border-gray-800 overflow-hidden flex items-center justify-center">
-                  <video
-                    src={video.url || ''}
-                    className="w-full h-full object-cover"
-                    controls
-                    muted
-                    playsInline
-                  />
+            {videos.map(video => {
+              const videoUrl = getOutputUrl(video)
+              return (
+                <div key={video.id} className="relative group">
+                  <div className="w-40 h-72 bg-gray-900 rounded-lg border border-gray-800 overflow-hidden flex items-center justify-center">
+                    <video
+                      src={videoUrl || ''}
+                      className="w-full h-full object-cover"
+                      controls
+                      muted
+                      playsInline
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <p className="text-xs text-gray-600 capitalize">{video.platform}</p>
+                    {videoUrl && (
+                      <a
+                        href={videoUrl}
+                        download
+                        className="text-xs text-[#E8622A] hover:underline"
+                      >
+                        Download
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <p className="text-xs text-gray-600 capitalize">{video.platform}</p>
-                  {video.url && (
-                    <a
-                      href={video.url}
-                      download
-                      className="text-xs text-[#E8622A] hover:underline"
-                    >
-                      Download
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

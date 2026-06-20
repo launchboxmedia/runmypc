@@ -48,6 +48,8 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [logoSignedUrl, setLogoSignedUrl] = useState<string | null>(null)
+  const [photoSignedUrl, setPhotoSignedUrl] = useState<string | null>(null)
   const supabase = createClient()
   const router = useRouter()
 
@@ -62,7 +64,30 @@ export default function ProfilePage() {
         .eq('id', user.id)
         .single()
 
-      if (data) setProfile(data)
+      if (data) {
+        setProfile(data)
+
+        // Regenerate signed URLs from stored URLs
+        if (data.logo_url) {
+          const path = data.logo_url.split('/job-assets/')[1]
+          if (path) {
+            const { data: signedData } = await supabase.storage
+              .from('job-assets')
+              .createSignedUrl(path, 3600)
+            if (signedData?.signedUrl) setLogoSignedUrl(signedData.signedUrl)
+          }
+        }
+
+        if (data.profile_photo_url) {
+          const path = data.profile_photo_url.split('/job-assets/')[1]
+          if (path) {
+            const { data: signedData } = await supabase.storage
+              .from('job-assets')
+              .createSignedUrl(path, 3600)
+            if (signedData?.signedUrl) setPhotoSignedUrl(signedData.signedUrl)
+          }
+        }
+      }
     }
     loadProfile()
   }, [])
@@ -80,10 +105,10 @@ export default function ProfilePage() {
           upsert: true
         })
       if (data) {
-        const { data: urlData } = supabase.storage
+        const { data: urlData } = await supabase.storage
           .from('job-assets')
-          .getPublicUrl(data.path)
-        profile.logo_url = urlData.publicUrl
+          .createSignedUrl(data.path, 31536000) // 1 year
+        profile.logo_url = urlData?.signedUrl || null
       }
     }
 
@@ -96,10 +121,10 @@ export default function ProfilePage() {
           upsert: true
         })
       if (data) {
-        const { data: urlData } = supabase.storage
+        const { data: urlData } = await supabase.storage
           .from('job-assets')
-          .getPublicUrl(data.path)
-        profile.profile_photo_url = urlData.publicUrl
+          .createSignedUrl(data.path, 31536000) // 1 year
+        profile.profile_photo_url = urlData?.signedUrl || null
       }
     }
 
@@ -218,8 +243,8 @@ export default function ProfilePage() {
         <Section title="Visual Assets">
           <Field label="Logo">
             <div className="flex items-center gap-4">
-              {profile.logo_url && (
-                <img src={profile.logo_url} alt="Logo" className="w-16 h-16 object-contain bg-gray-900 rounded-lg p-2" />
+              {logoSignedUrl && (
+                <img src={logoSignedUrl} alt="Logo" className="w-16 h-16 object-contain bg-gray-900 rounded-lg p-2" />
               )}
               <input
                 type="file"
@@ -231,8 +256,8 @@ export default function ProfilePage() {
           </Field>
           <Field label="Profile Photo">
             <div className="flex items-center gap-4">
-              {profile.profile_photo_url && (
-                <img src={profile.profile_photo_url} alt="Photo" className="w-16 h-16 object-cover rounded-full" />
+              {photoSignedUrl && (
+                <img src={photoSignedUrl} alt="Photo" className="w-16 h-16 object-cover rounded-full" />
               )}
               <input
                 type="file"

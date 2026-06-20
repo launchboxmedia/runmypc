@@ -134,7 +134,7 @@ export async function POST(req: Request) {
 
   const adminSupabase = createAdminClient()
 
-  const { topic, target_audience, outcome, mode, flipbookpro_url } = await req.json().catch(() => ({}))
+  const { topic, target_audience, outcome, mode, flipbookpro_url, selected_asset_ids } = await req.json().catch(() => ({}))
   if (!topic?.trim()) return NextResponse.json({ error: 'Topic is required.' }, { status: 400 })
   if (!target_audience?.trim()) return NextResponse.json({ error: 'Target audience is required.' }, { status: 400 })
   if (!outcome?.trim()) return NextResponse.json({ error: 'Outcome is required.' }, { status: 400 })
@@ -194,6 +194,16 @@ export async function POST(req: Request) {
       status: 'pending'
     }))
   )
+
+  // Store selected assets if provided
+  if (selected_asset_ids && Array.isArray(selected_asset_ids) && selected_asset_ids.length > 0) {
+    await adminSupabase.from('job_selected_assets').insert(
+      selected_asset_ids.map((assetId: string) => ({
+        job_id: job.id,
+        asset_id: assetId
+      }))
+    )
+  }
 
   // Send Telegram start notification
   const { data: profile } = await adminSupabase
