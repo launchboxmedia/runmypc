@@ -127,7 +127,15 @@ Respond ONLY with JSON:
           platform: platform.key,
           label: `${platform.label} — Variant ${i + 1}`,
           content: JSON.stringify(variant),
-          metadata: { type: 'ad_copy', format: platform.format }
+          metadata: {
+            type: 'ad_copy',
+            format: platform.format,
+            research_grounding: {
+              topic_used: niche,
+              source: 'ad_scraping',
+              ads_analyzed: topAds.length
+            }
+          }
         }))
       )
     }

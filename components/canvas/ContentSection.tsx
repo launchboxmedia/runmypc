@@ -67,6 +67,19 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
   // Helper to get URL: prefer signed URL, fall back to stored URL
   const getOutputUrl = (output: JobOutput) => signedUrls[output.id] || output.url
 
+  // Helper to render research grounding tag
+  const getResearchTag = (output: JobOutput) => {
+    const grounding = output.metadata?.research_grounding
+    if (!grounding) return null
+
+    // Prefer topic_used as it's most human-readable
+    if (grounding.topic_used) {
+      return `Based on: ${grounding.topic_used}`
+    }
+
+    return null
+  }
+
   return (
     <div className="mb-16">
       <div className="flex items-center gap-3 mb-6">
@@ -97,12 +110,17 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
               autoPlay
               loop
             />
-            <div className="p-3 flex items-center justify-between bg-gray-900">
-              <p className="text-xs text-gray-400">Cinematic Hero</p>
-              {getOutputUrl(cinematicVideo) && (
-                <a href={getOutputUrl(cinematicVideo) || undefined} download className="text-xs text-[#E8622A] hover:underline">
-                  Download
-                </a>
+            <div className="p-3 bg-gray-900">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-gray-400">Cinematic Hero</p>
+                {getOutputUrl(cinematicVideo) && (
+                  <a href={getOutputUrl(cinematicVideo) || undefined} download className="text-xs text-[#E8622A] hover:underline">
+                    Download
+                  </a>
+                )}
+              </div>
+              {getResearchTag(cinematicVideo) && (
+                <p className="text-xs text-gray-600 italic">{getResearchTag(cinematicVideo)}</p>
               )}
             </div>
           </div>
@@ -169,9 +187,16 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                       Download
                     </a>
                   )}
-                  <p className="text-xs text-gray-600 mt-1 text-center truncate">
-                    {creative.platform}
-                  </p>
+                  <div className="mt-1">
+                    <p className="text-xs text-gray-600 text-center truncate">
+                      {creative.platform}
+                    </p>
+                    {getResearchTag(creative) && (
+                      <p className="text-xs text-gray-700 italic text-center truncate mt-0.5">
+                        {getResearchTag(creative)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )
             })
@@ -197,16 +222,21 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                       playsInline
                     />
                   </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <p className="text-xs text-gray-600 capitalize">{video.platform}</p>
-                    {videoUrl && (
-                      <a
-                        href={videoUrl}
-                        download
-                        className="text-xs text-[#E8622A] hover:underline"
-                      >
-                        Download
-                      </a>
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-600 capitalize">{video.platform}</p>
+                      {videoUrl && (
+                        <a
+                          href={videoUrl}
+                          download
+                          className="text-xs text-[#E8622A] hover:underline"
+                        >
+                          Download
+                        </a>
+                      )}
+                    </div>
+                    {getResearchTag(video) && (
+                      <p className="text-xs text-gray-700 italic mt-0.5">{getResearchTag(video)}</p>
                     )}
                   </div>
                 </div>
@@ -275,6 +305,11 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 uppercase tracking-widest mb-1">Hashtags</p>
                       <p className="text-sm text-gray-500">{parsed.hashtags.join(' ')}</p>
+                    </div>
+                  )}
+                  {getResearchTag(post) && (
+                    <div className="mt-3 pt-3 border-t border-gray-800">
+                      <p className="text-xs text-gray-600 italic">{getResearchTag(post)}</p>
                     </div>
                   )}
                   <button

@@ -569,7 +569,14 @@ Respond ONLY with JSON:
           platform,
           label: `${platform} Post ${i + 1}`,
           content: JSON.stringify(post),
-          metadata: { type: 'social_post' }
+          metadata: {
+            type: 'social_post',
+            research_grounding: {
+              topic_used: primaryTopic,
+              source: selectedTopics[0]?.source || 'fallback',
+              format_pattern: formatData.hook_patterns?.[0] || null
+            }
+          }
         }))
       )
     }
@@ -654,7 +661,15 @@ Respond ONLY with JSON:
 
         let finalUrl: string
         let storagePath: string
-        let metadata: any = { type: 'static_creative', size: spec.size }
+        let metadata: any = {
+          type: 'static_creative',
+          size: spec.size,
+          research_grounding: {
+            topic_used: primaryTopic,
+            source: selectedTopics[0]?.source || 'fallback',
+            format_pattern: formatData.hook_patterns?.[0] || null
+          }
+        }
 
         if (isResultCreative && resultAssets.length > 0) {
           // Use real uploaded asset instead of generating
@@ -919,7 +934,15 @@ Respond ONLY with JSON:
                   platform: video.platform,
                   label: `${video.platform} Video`,
                   url: urlData.publicUrl,
-                  metadata: { type: 'hyperframes_video', platform: video.platform }
+                  metadata: {
+                    type: 'hyperframes_video',
+                    platform: video.platform,
+                    research_grounding: {
+                      topic_used: primaryTopic,
+                      source: selectedTopics[0]?.source || 'fallback',
+                      format_pattern: formatData.hook_patterns?.[0] || null
+                    }
+                  }
                 })
               }
 
@@ -1049,7 +1072,12 @@ No text overlay. Pure visual storytelling.`
               type: 'atlas_cloud_video',
               model: 'seedance-2.0',
               duration: 5,
-              atlas_id: result.id
+              atlas_id: result.id,
+              research_grounding: {
+                topic_used: primaryTopic,
+                source: selectedTopics[0]?.source || 'fallback',
+                format_pattern: formatData.hook_patterns?.[0] || null
+              }
             }
           })
         }

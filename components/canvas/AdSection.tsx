@@ -28,6 +28,19 @@ export function AdSection({ outputs, isActive }: Props) {
   )
   const platformAds = adCopy.filter(a => a.platform === activeTab)
 
+  // Helper to render research grounding tag
+  const getResearchTag = (output: JobOutput) => {
+    const grounding = output.metadata?.research_grounding
+    if (!grounding) return null
+
+    // Prefer topic_used as it's most human-readable
+    if (grounding.topic_used) {
+      return `Based on: ${grounding.topic_used}`
+    }
+
+    return null
+  }
+
   return (
     <div className="mb-16">
       <div className="flex items-center gap-3 mb-6">
@@ -104,6 +117,11 @@ export function AdSection({ outputs, isActive }: Props) {
                 {ad.metadata?.prediction_reason && (
                   <div className="mt-3 p-2 bg-gray-800 rounded">
                     <p className="text-xs text-gray-500">{ad.metadata.prediction_reason}</p>
+                  </div>
+                )}
+                {getResearchTag(ad) && (
+                  <div className="mt-3 pt-3 border-t border-gray-800">
+                    <p className="text-xs text-gray-600 italic">{getResearchTag(ad)}</p>
                   </div>
                 )}
                 <button
