@@ -1,5 +1,21 @@
 # Hyperframes Render Service (separate Vercel project)
 
+> **STATUS: DEPLOYED & VERIFIED (2026-06-21).**
+> - Live render endpoint: `https://hyperframes-render.vercel.app/api/render`
+> - Vercel project: `hyperframes-render` (team `richs-projects-5160eaeb`), Blob store `hfblob1`.
+> - Built from `heygen-com/hyperframes-vercel-template` with `route.ts.example`
+>   swapped into `app/api/render/route.ts` (accepts POSTed `html`). Build bakes the
+>   Vercel Sandbox snapshot (Chromium + FFmpeg).
+> - `HYPERFRAMES_RENDER_URL` is set in RunMyPC `.env.local` + the RunMyPC Vercel
+>   project (all environments). RunMyPC redeployed.
+> - Verified: real generator → live render → 1.42 MB animated 12s MP4 → stored →
+>   `social_video` row inserted in `job_outputs`.
+> - IMPORTANT: hyperframes renders by seeking a **paused GSAP timeline** registered
+>   at `window.__timelines[id]` against the root `data-duration`. CSS `@keyframes`
+>   are NOT seeked (they render frozen). The RunMyPC generator emits the GSAP
+>   contract and validates it.
+
+
 RunMyPC's Step 5 (social videos) POSTs an LLM-generated HTML composition to a
 render service and expects an MP4 URL back. That service is **a separate Vercel
 project** based on the Hyperframes template, deployed independently from RunMyPC.
