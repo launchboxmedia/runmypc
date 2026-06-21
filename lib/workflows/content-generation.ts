@@ -902,8 +902,11 @@ Respond ONLY with JSON:
           })
           .filter(Boolean) as Array<{ platform: string; hook: string; body: string; cta: string }>
 
+        console.log(`[Hyperframes] Found ${posts.length} social posts for video generation`)
+
         if (posts.length > 0) {
           const { generateAllPlatformVideos } = await import('@/lib/hyperframes')
+          console.log('[Hyperframes] Calling generateAllPlatformVideos...')
           const videos = await generateAllPlatformVideos({
             posts,
             brandColor,
@@ -979,18 +982,14 @@ Respond ONLY with JSON:
       .eq('id', job.user_id)
       .single()
 
-    const isRunMyPCJob = !profileCheck?.business_name ||
-                         profileCheck.business_name.toLowerCase().includes('runmypc')
-
-    if (!isRunMyPCJob) {
-      // Customer job — skip Step 7 cinematic video (RunMyPC branding not allowed)
-      await updateStep(supabase, jobId, 'generate-cinematic-video', 'skipped')
-    } else {
+    // Generate cinematic video for all jobs (removed business_name gate)
+    {
       // RunMyPC's own marketing job — proceed with RunMyPC branding
       await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
       await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 
       try {
+        console.log('[Atlas Cloud] Starting cinematic video generation...')
         const { generateVideo } = await import('@/lib/atlascloud')
         const { BRAND_ASSETS } = await import('@/lib/brandAssets')
 
