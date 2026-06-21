@@ -20,7 +20,9 @@ type Props = {
   isRefined?: boolean
 }
 
-const PLATFORMS = ['instagram', 'tiktok', 'youtube', 'linkedin']
+// v1 social gate — only Instagram + TikTok tabs are shown. YouTube + LinkedIn
+// are deferred to v2. Mirrors V1_SOCIAL_PLATFORMS in lib/workflows/content-generation.ts.
+const V1_SOCIAL_PLATFORMS = ['instagram', 'tiktok']
 
 export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const [activeTab, setActiveTab] = useState('instagram')
@@ -59,9 +61,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const carousel = outputs.find(o => o.output_type === 'static_creative' && o.platform === 'instagram_carousel')
   const cinematicVideo = outputs.find(o => o.output_type === 'cinematic_video')
   const videos = outputs.filter(o => o.output_type === 'social_video' || o.output_type === 'platform_video')
-  const socialPosts = outputs.filter(o =>
-    o.output_type === 'ad_copy' && o.metadata?.type === 'social_post'
-  )
+  const socialPosts = outputs.filter(o => o.output_type === 'social_post')
   const platformPosts = socialPosts.filter(p => p.platform === activeTab)
 
   // Helper to get URL: prefer signed URL, fall back to stored URL
@@ -250,7 +250,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
       <div>
         <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">Social Copy</p>
         <div className="flex gap-1 mb-4 border-b border-gray-800 overflow-x-auto">
-          {PLATFORMS.map(platform => (
+          {V1_SOCIAL_PLATFORMS.map(platform => (
             <button
               key={platform}
               onClick={() => setActiveTab(platform)}
@@ -272,6 +272,13 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
             platformPosts.map(post => {
               let parsed: any = {}
               try { parsed = JSON.parse(post.content || '{}') } catch {}
+              // Prefer persisted structured metadata; fall back to parsed content.
+              const data = {
+                hook: post.metadata?.hook ?? parsed.hook,
+                body: post.metadata?.body ?? parsed.body,
+                cta: post.metadata?.cta ?? parsed.cta,
+                hashtags: post.metadata?.hashtags ?? parsed.hashtags,
+              }
               return (
                 <div key={post.id} className={`p-4 bg-gray-900 rounded-lg border ${
                   post.metadata?.refined ? 'border-[#E8622A]' : 'border-gray-800'
@@ -283,28 +290,28 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                       </span>
                     </div>
                   )}
-                  {parsed.hook && (
+                  {data.hook && (
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 uppercase tracking-widest mb-1">Hook</p>
-                      <p className="text-sm text-white font-medium">{parsed.hook}</p>
+                      <p className="text-sm text-white font-medium">{data.hook}</p>
                     </div>
                   )}
-                  {parsed.body && (
+                  {data.body && (
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 uppercase tracking-widest mb-1">Body</p>
-                      <p className="text-sm text-gray-300">{parsed.body}</p>
+                      <p className="text-sm text-gray-300">{data.body}</p>
                     </div>
                   )}
-                  {parsed.cta && (
+                  {data.cta && (
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 uppercase tracking-widest mb-1">CTA</p>
-                      <p className="text-sm text-gray-300">{parsed.cta}</p>
+                      <p className="text-sm text-gray-300">{data.cta}</p>
                     </div>
                   )}
-                  {parsed.hashtags?.length > 0 && (
+                  {data.hashtags?.length > 0 && (
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 uppercase tracking-widest mb-1">Hashtags</p>
-                      <p className="text-sm text-gray-500">{parsed.hashtags.join(' ')}</p>
+                      <p className="text-sm text-gray-500">{data.hashtags.join(' ')}</p>
                     </div>
                   )}
                   {getResearchTag(post) && (
@@ -314,7 +321,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                   )}
                   <button
                     onClick={() => navigator.clipboard.writeText(
-                      [parsed.hook, parsed.body, parsed.cta, parsed.hashtags?.join(' ')]
+                      [data.hook, data.body, data.cta, data.hashtags?.join(' ')]
                         .filter(Boolean).join('\n\n')
                     )}
                     className="text-xs text-[#E8622A] hover:underline"

@@ -16,6 +16,11 @@ function getClients() {
 
 const PLATFORMS = ['instagram', 'tiktok', 'youtube', 'linkedin']
 
+// v1 social gate — Instagram + TikTok only. YouTube + LinkedIn are v2.
+// This GATES dispatch (research + generation); it does not remove the code.
+// Un-gate for v2 by adding the platforms back to this list.
+const V1_SOCIAL_PLATFORMS = ['instagram', 'tiktok']
+
 async function updateStep(
   supabase: ReturnType<typeof createAdminClient>,
   jobId: string,
@@ -217,24 +222,26 @@ No examples provided - reason fresh per niche.`
         return []
       })(),
 
-      // YouTube - use social keywords with fallback
-      (async () => {
-        for (const keyword of socialKeywords) {
-          const results = await runApifyActor('streamers/youtube-scraper', {
-            searchQueries: [keyword],
-            maxResults: 15
-          }).catch(() => [])
-          if (results.length > 0) {
-            console.log(`YouTube scraper succeeded with keyword: ${keyword}`)
-            return results
-          }
-        }
-        console.log('YouTube scraper: all keywords returned 0 results')
-        return []
-      })(),
+      // YouTube - use social keywords with fallback (v1-gated: skipped unless un-gated for v2)
+      V1_SOCIAL_PLATFORMS.includes('youtube')
+        ? (async () => {
+            for (const keyword of socialKeywords) {
+              const results = await runApifyActor('streamers/youtube-scraper', {
+                searchQueries: [keyword],
+                maxResults: 15
+              }).catch(() => [])
+              if (results.length > 0) {
+                console.log(`YouTube scraper succeeded with keyword: ${keyword}`)
+                return results
+              }
+            }
+            console.log('YouTube scraper: all keywords returned 0 results')
+            return []
+          })()
+        : Promise.resolve([]),
 
-      // LinkedIn (only if B2B)
-      isB2B
+      // LinkedIn (only if B2B, and v1-gated)
+      isB2B && V1_SOCIAL_PLATFORMS.includes('linkedin')
         ? runApifyActor('harvestapi/linkedin-post-search', {
             searchQueries: [primaryTerm],
             maxPosts: 15
@@ -467,7 +474,7 @@ CRITICAL: If you need a result/credential/location claim, use ONLY the facts abo
 
 CRITICAL: No business facts have been provided. Do NOT generate any posts claiming specific results, credentials, locations, or client testimonials. Focus on educational/value content only.`
 
-    for (const platform of PLATFORMS) {
+    for (const platform of PLATFORMS.filter(p => V1_SOCIAL_PLATFORMS.includes(p))) {
       const { anthropic } = getClients()
 
       let platformInstructions = ''
@@ -565,15 +572,22 @@ Respond ONLY with JSON:
       await supabase.from('job_outputs').insert(
         posts.map((post: Record<string, unknown>, i: number) => ({
           job_id: jobId,
-          output_type: 'ad_copy',
+          output_type: 'social_post',
           platform,
           label: `${platform} Post ${i + 1}`,
+          // content kept as the raw JSON post for back-compat with downstream
+          // parsers (carousel, Hyperframes) and the UI copy button.
           content: JSON.stringify(post),
           metadata: {
             type: 'social_post',
+            platform,
+            hook: post.hook ?? null,
+            body: post.body ?? null,
+            cta: post.cta ?? null,
+            hashtags: Array.isArray(post.hashtags) ? post.hashtags : [],
             research_grounding: {
-              topic_used: primaryTopic,
               source: selectedTopics[0]?.source || 'fallback',
+              topic_used: primaryTopic,
               format_pattern: formatData.hook_patterns?.[0] || null
             }
           }
@@ -587,7 +601,8 @@ Respond ONLY with JSON:
     await updateStep(supabase, jobId, 'generate-static-creatives', 'running')
     await notifyStep(supabase, job.user_id, 'Creating static visuals', 'content_generation')
 
-    const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
+    // Neutral fallback when the customer has no brand color set — never RunMyPC's.
+    const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#111827'
 
     // Fetch selected business assets for static creatives
     // Only use assets explicitly selected for this job
@@ -756,7 +771,7 @@ Respond ONLY with JSON:
         .from('job_outputs')
         .select('content')
         .eq('job_id', jobId)
-        .eq('output_type', 'ad_copy')
+        .eq('output_type', 'social_post')
         .eq('platform', 'instagram')
         .limit(1)
         .single()
@@ -781,8 +796,8 @@ Respond ONLY with JSON:
           { content: instParsed.cta || 'Follow for more', slideType: 'cta' as const }
         ].slice(0, 7)
 
-        const businessName = profile?.business_name || 'RunMyPC'
-        const handle = profile?.instagram_handle || '@runmypc'
+        const businessName = profile?.business_name || ''
+        const handle = profile?.instagram_handle || ''
 
         const outputDir = path.join(process.cwd(), 'tmp', 'carousel', jobId)
 
@@ -838,38 +853,27 @@ Respond ONLY with JSON:
       await updateStep(supabase, jobId, 'generate-instagram-carousel', 'failed')
     }
 
-    // Step 5: Generate platform videos via Hyperframes
+    // Step 5: Generate social videos via Hyperframes (agent-driven compositions).
+    // One social_video per social_post. Brand-neutral; works with zero assets.
     await updateStep(supabase, jobId, 'generate-platform-videos', 'running')
-    await notifyStep(supabase, job.user_id, 'Generating platform videos', 'content_generation')
+    await notifyStep(supabase, job.user_id, 'Generating social videos', 'content_generation')
 
     try {
-      // Get social posts
-      const { data: socialOutputs } = await supabase
-        .from('job_outputs')
-        .select('*')
-        .eq('job_id', jobId)
-        .eq('output_type', 'ad_copy')
+      const { isHyperframesConfigured, generateAllSocialVideos } = await import('@/lib/hyperframes')
 
-      if (!socialOutputs?.length) {
+      if (!isHyperframesConfigured()) {
+        console.log('[Hyperframes] HYPERFRAMES_RENDER_URL not set — skipping social videos')
         await updateStep(supabase, jobId, 'generate-platform-videos', 'skipped')
       } else {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('brand_colors, business_name, instagram_handle, tiktok_handle, youtube_handle, linkedin_url')
-          .eq('id', job.user_id)
-          .single()
+        // Get social posts
+        const { data: socialOutputs } = await supabase
+          .from('job_outputs')
+          .select('*')
+          .eq('job_id', jobId)
+          .eq('output_type', 'social_post')
 
-        const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#E8622A'
-        const businessName = profile?.business_name || 'RunMyPC'
-        const handles: Record<string, string> = {
-          instagram: profile?.instagram_handle || '',
-          tiktok: profile?.tiktok_handle || '',
-          youtube: profile?.youtube_handle || '',
-          linkedin: profile?.linkedin_url || ''
-        }
-
-        // Fetch selected business assets for video composition
-        // Only use assets explicitly selected for this job
+        // Fetch selected business assets for video composition.
+        // Only assets explicitly selected for this job. Optional.
         const { data: selectedAssetJoins } = await supabase
           .from('job_selected_assets')
           .select('asset_id, business_assets!inner(*)')
@@ -883,8 +887,7 @@ Respond ONLY with JSON:
             (asset.usable_in === 'video' || asset.usable_in === 'both')
           ) || []
 
-        const posts = socialOutputs
-          .filter(o => o.metadata?.type === 'social_post')
+        const posts = (socialOutputs || [])
           .map(o => {
             try {
               const contentStr = o.content || '{}'
@@ -904,27 +907,25 @@ Respond ONLY with JSON:
 
         console.log(`[Hyperframes] Found ${posts.length} social posts for video generation`)
 
-        if (posts.length > 0) {
-          const { generateAllPlatformVideos } = await import('@/lib/hyperframes')
-          console.log('[Hyperframes] Calling generateAllPlatformVideos...')
-          const videos = await generateAllPlatformVideos({
+        if (posts.length === 0) {
+          await updateStep(supabase, jobId, 'generate-platform-videos', 'skipped')
+        } else {
+          const videos = await generateAllSocialVideos({
             posts,
-            brandColor,
-            businessName,
-            handles,
             businessAssets: businessAssets || []
           })
 
-          const { readFileSync, unlinkSync } = await import('fs')
-
           for (const video of videos) {
             try {
-              const fileBuffer = readFileSync(video.filePath)
-              const filename = `${job.user_id}/${jobId}/videos/${video.platform}-hyperframes-${Date.now()}.mp4`
+              // Render service returns a public MP4 URL (Vercel Blob).
+              // Download + re-upload to our storage for persistence.
+              const videoRes = await fetch(video.mp4Url)
+              const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+              const filename = `${job.user_id}/${jobId}/videos/${video.platform}-social-${video.postIndex}-${Date.now()}.mp4`
 
               const { error: uploadError } = await supabase.storage
                 .from('job-assets')
-                .upload(filename, fileBuffer, { contentType: 'video/mp4' })
+                .upload(filename, videoBuffer, { contentType: 'video/mp4' })
 
               if (!uploadError) {
                 const { data: urlData } = supabase.storage
@@ -933,13 +934,14 @@ Respond ONLY with JSON:
 
                 await supabase.from('job_outputs').insert({
                   job_id: jobId,
-                  output_type: 'platform_video',
+                  output_type: 'social_video',
                   platform: video.platform,
                   label: `${video.platform} Video`,
                   url: urlData.publicUrl,
                   metadata: {
                     type: 'hyperframes_video',
                     platform: video.platform,
+                    post_index: video.postIndex,
                     research_grounding: {
                       topic_used: primaryTopic,
                       source: selectedTopics[0]?.source || 'fallback',
@@ -948,18 +950,16 @@ Respond ONLY with JSON:
                   }
                 })
               }
-
-              unlinkSync(video.filePath)
             } catch (err) {
-              console.error(`Failed to upload Hyperframes video for ${video.platform}:`, err)
+              console.error(`Failed to upload social video for ${video.platform}:`, err)
             }
           }
-        }
 
-        await updateStep(supabase, jobId, 'generate-platform-videos', 'completed')
+          await updateStep(supabase, jobId, 'generate-platform-videos', 'completed')
+        }
       }
     } catch (err) {
-      console.error('Platform video generation failed:', err)
+      console.error('Social video generation failed:', err)
       await updateStep(supabase, jobId, 'generate-platform-videos', 'failed')
     }
 
@@ -969,31 +969,17 @@ Respond ONLY with JSON:
     // No AWS Lambda setup needed for this cancelled step.
     await updateStep(supabase, jobId, 'generate-remotion-videos', 'skipped')
 
-    // Step 7: Generate cinematic video
-    // NOTE: This step uses RunMyPC BRAND_ASSETS (DJ, b-boy, graffiti writer) and is ONLY for
-    // RunMyPC's own internal marketing content, NOT customer jobs.
-    // Customer videos (Steps 3, 4, 5) use ONLY the customer's own business_assets.
-    // ENFORCEMENT: Skip this step entirely for customer jobs.
-
-    // Get user profile to determine if this is RunMyPC's own job
-    const { data: profileCheck } = await supabase
-      .from('profiles')
-      .select('business_name')
-      .eq('id', job.user_id)
-      .single()
-
-    // Generate cinematic video for all jobs (removed business_name gate)
+    // Step 7: Generate cinematic hero video (Seedance via Atlas Cloud).
+    // Brand-neutral: built from the customer's niche/topic. Uses the customer's
+    // own selected business assets as references when available; otherwise runs
+    // text-to-video. Runs for every job.
     {
-      // RunMyPC's own marketing job — proceed with RunMyPC branding
       await updateStep(supabase, jobId, 'generate-cinematic-video', 'running')
       await notifyStep(supabase, job.user_id, 'Generating cinematic video', 'content_generation')
 
       try {
         console.log('[Atlas Cloud] Starting cinematic video generation...')
         const { generateVideo } = await import('@/lib/atlascloud')
-        const { BRAND_ASSETS } = await import('@/lib/brandAssets')
-
-        const businessName = profileCheck?.business_name || 'RunMyPC'
 
         // Fetch selected topics from niche research
         const { data: researchOutput } = await supabase
@@ -1020,29 +1006,38 @@ Respond ONLY with JSON:
 
         const factsContext = businessFacts?.map(f => f.content).join('; ').substring(0, 300) || ''
 
-        // Build cinematic prompt with FULL topic details (not generic)
-        const prompt = `A bold cinematic vertical video for ${businessName}.
-Topic: ${selectedTopic}
+        // Customer's own selected, video-usable assets as references (optional).
+        const { data: cinematicAssetJoins } = await supabase
+          .from('job_selected_assets')
+          .select('asset_id, business_assets!inner(*)')
+          .eq('job_id', jobId)
+
+        const referenceImages = (cinematicAssetJoins || [])
+          .map((join: any) => join.business_assets)
+          .filter((asset: any) =>
+            asset &&
+            asset.status === 'approved' &&
+            (asset.usable_in === 'video' || asset.usable_in === 'both')
+          )
+          .map((asset: any) => asset.file_path)
+          .filter(Boolean) as string[]
+
+        // Brand-neutral cinematic prompt — works for any niche.
+        const prompt = `A bold, modern cinematic vertical video about: ${selectedTopic}.
 ${factsContext ? `Key context: ${factsContext}` : ''}
-Style: Hip hop culture aesthetic, orange outline character on black background,
-dynamic movement, professional and bold.
-The RunMyPC brand character moves fluidly.
-Orange accent color #E8622A throughout.
+Style: high production value, dynamic camera movement, clean professional lighting,
+strong visual storytelling. Cohesive, contemporary aesthetic suited to the topic.
 9:16 vertical format for social media.
 No text overlay. Pure visual storytelling.`
-
-      // Use b-boy character as reference if available
-      const referenceImages = [
-        BRAND_ASSETS.bboy,
-        BRAND_ASSETS.graffitiWall
-      ].filter(Boolean)
 
       const result = await generateVideo({
         prompt,
         referenceImageUrls: referenceImages,
         duration: 5,
         aspectRatio: '9:16',
-        model: 'bytedance/seedance-2.0/reference-to-video'
+        model: referenceImages.length > 0
+          ? 'bytedance/seedance-2.0/reference-to-video'
+          : 'bytedance/seedance-2.0/text-to-video'
       })
 
       if (result.status === 'completed' && result.output_url) {

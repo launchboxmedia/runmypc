@@ -22,6 +22,7 @@ RunMyPC project — NOT the FlipBookPro project
 Never query or modify FlipBookPro's Supabase
 
 ## Rules
+- API keys live in C:\Users\mjohn\Documents\LaunchBox.Media\runmypc\.env.local. Before claiming ANY key is missing, cat the actual .env.local file and grep for the key name. If you cannot find it after reading the file, show the exact grep output. Do not assert a key is missing without proving it.
 - npx tsc --noEmit after every task
 - Never touch /c/Users/mjohn/flipbookpro-v2
 - Never use FlipBookPro Supabase project

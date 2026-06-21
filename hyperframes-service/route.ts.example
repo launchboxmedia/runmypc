@@ -1,0 +1,70 @@
+// Hyperframes render service — POSTED-HTML variant.
+// Drop-in replacement for the template's app/api/render/route.ts.
+// Renames to route.ts inside the SEPARATE Hyperframes Vercel project.
+//
+// Difference vs. stock template: reads the composition HTML from the request
+// body instead of a fixed PREVIEW_COMPOSITION_DIR, so RunMyPC can render a
+// custom agent-written composition per social post.
+
+import { NextResponse } from "next/server";
+import { put } from "@vercel/blob";
+import { renderInSandbox } from "@/lib/sandbox";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+type RenderBody = {
+  html: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  durationInSeconds?: number;
+};
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as RenderBody;
+
+    if (!body?.html || typeof body.html !== "string") {
+      return NextResponse.json(
+        { error: "Missing 'html' in request body" },
+        { status: 400 },
+      );
+    }
+
+    // Build the in-memory composition the sandbox expects:
+    // an array of { rel, content: Buffer }. index.html is the entrypoint.
+    const files: Array<{ rel: string; content: Buffer }> = [
+      { rel: "index.html", content: Buffer.from(body.html, "utf8") },
+    ];
+
+    // If the template's renderInSandbox derives duration/fps from a manifest
+    // rather than the composition's own CSS timing, write it here. Adjust the
+    // filename/shape to match the template's expectations.
+    //
+    // const manifest = {
+    //   width: body.width ?? 1080,
+    //   height: body.height ?? 1920,
+    //   fps: body.fps ?? 30,
+    //   durationInSeconds: body.durationInSeconds ?? 12,
+    // };
+    // files.push({ rel: "composition.json", content: Buffer.from(JSON.stringify(manifest)) });
+
+    const { mp4 } = await renderInSandbox(files);
+
+    const blob = await put("renders/render.mp4", mp4, {
+      access: "public",
+      contentType: "video/mp4",
+      addRandomSuffix: true,
+      allowOverwrite: true,
+    });
+
+    return NextResponse.json({ url: blob.url });
+  } catch (err) {
+    console.error("[/api/render] failed", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Render failed" },
+      { status: 500 },
+    );
+  }
+}

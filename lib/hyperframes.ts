@@ -1,208 +1,161 @@
-// Hyperframes Video Generation
-// STATUS: Installed, asset-compositing NOT YET VALIDATED
-// Hyperframes CLI connected via subprocess. Has NOT produced a real video using
-// actual user/business assets. Not production-ready until end-to-end asset
-// compositing works with real uploaded assets.
+// Hyperframes Social Video Generation — agent-driven compositions.
+//
+// For each social post we ask an LLM (Claude Haiku) to write a self-contained
+// HTML/CSS/JS motion-graphics composition, then POST that HTML to a deployed
+// Hyperframes render service (HYPERFRAMES_RENDER_URL). The service renders the
+// composition to MP4 in a Vercel Sandbox (Chromium + FFmpeg) and returns a
+// public MP4 URL.
+//
+// There is NO brand identity here. Every job is a customer job. Compositions
+// use safe, niche-neutral defaults (dark background, bold typography, high
+// contrast) and embed the customer's own business assets when available.
+//
+// Deploy reference for the render service: see hyperframes-service/README.md.
+// If HYPERFRAMES_RENDER_URL is unset, callers should skip social video.
 
-import { execSync } from 'child_process'
-import * as path from 'path'
-import * as fs from 'fs'
-import { v4 as uuidv4 } from 'uuid'
+import Anthropic from '@anthropic-ai/sdk'
 
-type VideoSpec = {
-  platform: 'instagram' | 'tiktok' | 'youtube' | 'linkedin'
+let anthropic: Anthropic
+function getAnthropic(): Anthropic {
+  if (!anthropic) anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  return anthropic
+}
+
+const COMPOSITION_MODEL = 'claude-haiku-4-5-20251001'
+
+// 9:16 vertical for IG Reels + TikTok.
+const VIDEO_WIDTH = 1080
+const VIDEO_HEIGHT = 1920
+const VIDEO_FPS = 30
+const VIDEO_DURATION_SECONDS = 12
+
+export type SocialPostInput = {
+  platform: string
   hook: string
   body: string
   cta: string
-  brandColor: string
-  businessName: string
-  handle: string
-  businessAssets?: BusinessAsset[]
 }
 
-export async function generatePlatformVideo(spec: VideoSpec): Promise<string> {
-  const { platform, hook, body, cta, brandColor, businessName, handle, businessAssets = [] } = spec
-
-  // Platform-specific dimensions
-  const dimensions = {
-    instagram: { width: 1080, height: 1920 },
-    tiktok: { width: 1080, height: 1920 },
-    youtube: { width: 1920, height: 1080 },
-    linkedin: { width: 1920, height: 1080 }
-  }
-
-  const { width, height } = dimensions[platform]
-
-  // CRITICAL: businessAssets are the CUSTOMER'S uploaded assets (logo, product photos, results).
-  // RunMyPC's brand characters (DJ, b-boy, graffiti writer) are product/marketing identity only.
-  // NEVER composite RunMyPC branding into customer video content.
-  const assetUrl = businessAssets.length > 0 ? businessAssets[0].file_path : null
-
-  // Create temp HTML composition
-  const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: ${brandColor};
-      width: ${width}px;
-      height: ${height}px;
-      overflow: hidden;
-      position: relative;
-    }
-    .asset-bg {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      opacity: 0.3;
-      z-index: 0;
-    }
-    #stage {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      padding: 80px;
-      color: white;
-      text-align: center;
-      position: relative;
-      z-index: 1;
-    }
-    .hook {
-      font-size: 72px;
-      font-weight: 900;
-      line-height: 1.2;
-      margin-bottom: 40px;
-      animation: fadeInUp 0.8s ease-out;
-    }
-    .body {
-      font-size: 42px;
-      font-weight: 500;
-      line-height: 1.5;
-      margin-bottom: 60px;
-      opacity: 0;
-      animation: fadeInUp 0.8s ease-out 1s forwards;
-    }
-    .cta {
-      font-size: 48px;
-      font-weight: 700;
-      padding: 30px 60px;
-      background: white;
-      color: ${brandColor};
-      border-radius: 60px;
-      opacity: 0;
-      animation: fadeInUp 0.8s ease-out 2s forwards;
-    }
-    .handle {
-      position: absolute;
-      bottom: 40px;
-      font-size: 36px;
-      font-weight: 600;
-      opacity: 0;
-      animation: fadeInUp 0.8s ease-out 3s forwards;
-    }
-    @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
-</head>
-<body>
-  ${assetUrl ? `<img class="asset-bg" src="${assetUrl}" alt="Business asset background" />` : ''}
-  <div id="stage" data-composition-id="${platform}-video" data-start="0" data-width="${width}" data-height="${height}">
-    <div class="hook clip" data-start="0" data-duration="6">${hook}</div>
-    <div class="body clip" data-start="1" data-duration="6">${body.substring(0, 200)}</div>
-    <div class="cta clip" data-start="2" data-duration="6">${cta}</div>
-    <div class="handle clip" data-start="3" data-duration="6">${handle}</div>
-  </div>
-</body>
-</html>
-  `
-
-  // Write temp HTML file
-  const tmpDir = path.join(process.cwd(), 'tmp', 'hyperframes')
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true })
-  }
-
-  const htmlPath = path.join(tmpDir, `${platform}-${Date.now()}.html`)
-  fs.writeFileSync(htmlPath, htmlContent)
-
-  // Render to video via hyperframes CLI
-  const outputPath = path.join(tmpDir, `${platform}-${uuidv4()}.mp4`)
-
-  try {
-    // Invoke hyperframes CLI: npx hyperframes render <input> <output>
-    const cmd = `npx hyperframes render "${htmlPath}" "${outputPath}" --fps 30 --duration 6`
-    execSync(cmd, { stdio: 'inherit' })
-  } catch (error) {
-    console.error('Hyperframes render failed:', error)
-    throw new Error('Video generation failed')
-  } finally {
-    // Cleanup HTML
-    if (fs.existsSync(htmlPath)) {
-      fs.unlinkSync(htmlPath)
-    }
-  }
-
-  return outputPath
-}
-
-type BusinessAsset = {
+export type BusinessAsset = {
   id: string
   file_path: string
   file_type: string
   usable_in: 'static' | 'video' | 'both'
 }
 
-export async function generateAllPlatformVideos(specs: {
-  posts: Array<{ platform: string; hook: string; body: string; cta: string }>
-  brandColor: string
-  businessName: string
-  handles: Record<string, string>
-  businessAssets?: BusinessAsset[]
-}): Promise<Array<{ platform: string; filePath: string }>> {
-  const { posts, brandColor, businessName, handles, businessAssets = [] } = specs
+export type SocialVideoResult = {
+  platform: string
+  postIndex: number
+  mp4Url: string
+}
 
-  const results: Array<{ platform: string; filePath: string }> = []
+export function isHyperframesConfigured(): boolean {
+  return Boolean(process.env.HYPERFRAMES_RENDER_URL)
+}
 
-  // Generate one video per platform (use first post for each)
-  const platformPosts = new Map<string, typeof posts[0]>()
-  for (const post of posts) {
-    if (!platformPosts.has(post.platform)) {
-      platformPosts.set(post.platform, post)
-    }
+// Ask the LLM to write a complete, self-contained motion-graphics composition.
+async function generateCompositionHtml(
+  post: SocialPostInput,
+  assetUrls: string[]
+): Promise<string> {
+  const assetBlock = assetUrls.length
+    ? `Customer brand assets you MAY embed (logo / product images). Use them tastefully as accents, backgrounds at low opacity, or a logo lockup. Do NOT distort them:\n${assetUrls.map((u, i) => `  ASSET_${i + 1}: ${u}`).join('\n')}`
+    : `No brand assets provided. Use text + motion graphics only.`
+
+  const system = `You are a motion-graphics engineer. You output ONE complete, self-contained HTML document that renders a short social-media video composition. The document is rendered to MP4 by a headless Chromium screen recorder, so EVERYTHING must be inline.
+
+HARD REQUIREMENTS:
+- Output ONLY the HTML document. No markdown fences, no commentary, no explanation.
+- Canvas is exactly ${VIDEO_WIDTH}x${VIDEO_HEIGHT} px (9:16 vertical). The <body> must be exactly that size, no scrollbars, overflow hidden.
+- Total animation runs ~${VIDEO_DURATION_SECONDS}s then holds on a CTA end card. Use CSS @keyframes / animation-delay for all timing. No JS timers required, but inline JS is allowed.
+- NO external resources except the asset image URLs explicitly provided. No web fonts, no CDNs, no <link>, no external <script>. Use system font stacks.
+- Dark background, high contrast, bold kinetic typography. Reveal the HOOK first (big), then supporting BODY, then a CTA end card. Think scroll-stopping reel, not slideshow.
+- Silent. No audio elements.
+- Looks good for ANY niche — no assumptions about industry.`
+
+  const user = `Write the composition for this ${post.platform} post.
+
+HOOK: ${post.hook}
+BODY: ${post.body}
+CTA: ${post.cta}
+
+${assetBlock}
+
+Return the full HTML document now.`
+
+  const res = await getAnthropic().messages.create({
+    model: COMPOSITION_MODEL,
+    max_tokens: 4096,
+    system,
+    messages: [{ role: 'user', content: user }]
+  })
+
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map(b => b.text)
+    .join('')
+
+  return stripCodeFences(text).trim()
+}
+
+// LLMs sometimes wrap output in ```html fences despite instructions.
+function stripCodeFences(s: string): string {
+  const fenceMatch = s.match(/```(?:html)?\s*([\s\S]*?)```/i)
+  if (fenceMatch) return fenceMatch[1]
+  return s
+}
+
+// POST the composition HTML to the deployed Hyperframes render service.
+async function renderComposition(html: string): Promise<string> {
+  const url = process.env.HYPERFRAMES_RENDER_URL
+  if (!url) throw new Error('HYPERFRAMES_RENDER_URL not configured')
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      html,
+      width: VIDEO_WIDTH,
+      height: VIDEO_HEIGHT,
+      fps: VIDEO_FPS,
+      durationInSeconds: VIDEO_DURATION_SECONDS
+    })
+  })
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '')
+    throw new Error(`Hyperframes render failed (${res.status}): ${err.slice(0, 300)}`)
   }
 
-  for (const [platform, post] of platformPosts) {
-    if (!['instagram', 'tiktok', 'youtube', 'linkedin'].includes(platform)) continue
+  const data = (await res.json()) as { url?: string; error?: string }
+  if (!data.url) throw new Error(`Hyperframes render returned no url: ${data.error || 'unknown'}`)
+  return data.url
+}
 
-    const videoPath = await generatePlatformVideo({
-      platform: platform as any,
-      hook: post.hook,
-      body: post.body,
-      cta: post.cta,
-      brandColor,
-      businessName,
-      handle: handles[platform] || `@${businessName.toLowerCase()}`,
-      businessAssets
-    })
+// Generate one social video per post. Works with zero business assets.
+export async function generateAllSocialVideos(specs: {
+  posts: SocialPostInput[]
+  businessAssets?: BusinessAsset[]
+}): Promise<SocialVideoResult[]> {
+  const { posts, businessAssets = [] } = specs
 
-    results.push({ platform, filePath: videoPath })
+  const assetUrls = businessAssets
+    .filter(a => a && (a.usable_in === 'video' || a.usable_in === 'both'))
+    .map(a => a.file_path)
+    .filter(Boolean)
+    .slice(0, 2)
+
+  const results: SocialVideoResult[] = []
+
+  for (let i = 0; i < posts.length; i++) {
+    const post = posts[i]
+    try {
+      const html = await generateCompositionHtml(post, assetUrls)
+      const mp4Url = await renderComposition(html)
+      results.push({ platform: post.platform, postIndex: i, mp4Url })
+    } catch (err) {
+      console.error(`[Hyperframes] post ${i} (${post.platform}) failed:`, err)
+    }
   }
 
   return results
