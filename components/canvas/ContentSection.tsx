@@ -27,13 +27,28 @@ const V1_SOCIAL_PLATFORMS = ['instagram', 'tiktok']
 export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const [activeTab, setActiveTab] = useState('instagram')
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+  const [slideSignedUrls, setSlideSignedUrls] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     async function generateSignedUrls() {
       const supabase = createClient()
       const urls: Record<string, string> = {}
+      const slideUrls: Record<string, string[]> = {}
 
       for (const output of outputs) {
+        // Re-sign multi-slide carousels from stored storage paths.
+        const slidePaths: string[] | undefined = output.metadata?.slide_paths
+        if (slidePaths?.length) {
+          const signed: string[] = []
+          for (const p of slidePaths) {
+            const { data } = await supabase.storage
+              .from('job-assets')
+              .createSignedUrl(p, 3600) // 1 hour expiry
+            if (data?.signedUrl) signed.push(data.signedUrl)
+          }
+          if (signed.length) slideUrls[output.id] = signed
+        }
+
         // Only generate for outputs with storage_path in metadata
         const storagePath = output.metadata?.storage_path
         if (!storagePath) continue
@@ -48,6 +63,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
       }
 
       setSignedUrls(urls)
+      setSlideSignedUrls(slideUrls)
     }
 
     if (isActive) {
@@ -128,13 +144,13 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
       )}
 
       {/* Instagram Carousel */}
-      {carousel && carousel.metadata?.slide_urls && (
+      {carousel && (slideSignedUrls[carousel.id] || carousel.metadata?.slide_urls) && (
         <div className="mb-8">
           <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
             Instagram Carousel — {carousel.metadata.slide_count} Slides
           </p>
           <div className="flex gap-2 overflow-x-auto pb-2">
-            {carousel.metadata.slide_urls.map((url: string, i: number) => (
+            {(slideSignedUrls[carousel.id] || carousel.metadata.slide_urls).map((url: string, i: number) => (
               <div key={i} className="shrink-0">
                 <img
                   src={url}

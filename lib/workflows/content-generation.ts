@@ -810,7 +810,9 @@ Respond ONLY with JSON:
           outputDir
         })
 
-        // Upload all slides
+        // Upload all slides. Store storage PATHS (not public URLs) — job-assets
+        // is private; signed URLs get regenerated at read time.
+        const slideStoragePaths: string[] = []
         const uploadedUrls: string[] = []
 
         for (let i = 0; i < slidePaths.length; i++) {
@@ -822,26 +824,29 @@ Respond ONLY with JSON:
             .upload(filename, slideBuffer, { contentType: 'image/png' })
 
           if (!error) {
-            const { data: urlData } = supabase.storage
+            slideStoragePaths.push(filename)
+            const { data: urlData } = await supabase.storage
               .from('job-assets')
-              .getPublicUrl(filename)
-            uploadedUrls.push(urlData.publicUrl)
+              .createSignedUrl(filename, 3600) // 1 hour expiry
+            if (urlData?.signedUrl) uploadedUrls.push(urlData.signedUrl)
           }
 
           require('fs').unlinkSync(slidePaths[i])
         }
 
-        if (uploadedUrls.length > 0) {
+        if (slideStoragePaths.length > 0) {
           await supabase.from('job_outputs').insert({
             job_id: jobId,
             output_type: 'static_creative',
             platform: 'instagram_carousel',
             label: 'Instagram Carousel (7 Slides)',
-            url: uploadedUrls[0],
+            url: uploadedUrls[0] || '',
             metadata: {
               type: 'carousel',
+              storage_path: slideStoragePaths[0],
+              slide_paths: slideStoragePaths,
               slide_urls: uploadedUrls,
-              slide_count: uploadedUrls.length
+              slide_count: slideStoragePaths.length
             }
           })
         }
@@ -928,20 +933,21 @@ Respond ONLY with JSON:
                 .upload(filename, videoBuffer, { contentType: 'video/mp4' })
 
               if (!uploadError) {
-                const { data: urlData } = supabase.storage
+                const { data: urlData } = await supabase.storage
                   .from('job-assets')
-                  .getPublicUrl(filename)
+                  .createSignedUrl(filename, 3600) // 1 hour expiry
 
                 await supabase.from('job_outputs').insert({
                   job_id: jobId,
                   output_type: 'social_video',
                   platform: video.platform,
                   label: `${video.platform} Video`,
-                  url: urlData.publicUrl,
+                  url: urlData?.signedUrl || '',
                   metadata: {
                     type: 'hyperframes_video',
                     platform: video.platform,
                     post_index: video.postIndex,
+                    storage_path: filename,
                     research_grounding: {
                       topic_used: primaryTopic,
                       source: selectedTopics[0]?.source || 'fallback',
@@ -1052,21 +1058,22 @@ No text overlay. Pure visual storytelling.`
           .upload(filename, videoBuffer, { contentType: 'video/mp4' })
 
         if (!uploadError) {
-          const { data: urlData } = supabase.storage
+          const { data: urlData } = await supabase.storage
             .from('job-assets')
-            .getPublicUrl(filename)
+            .createSignedUrl(filename, 3600) // 1 hour expiry
 
           await supabase.from('job_outputs').insert({
             job_id: jobId,
             output_type: 'cinematic_video',
             platform: null,
             label: 'Hero Cinematic Video',
-            url: urlData.publicUrl,
+            url: urlData?.signedUrl || '',
             metadata: {
               type: 'atlas_cloud_video',
               model: 'seedance-2.0',
               duration: 5,
               atlas_id: result.id,
+              storage_path: filename,
               research_grounding: {
                 topic_used: primaryTopic,
                 source: selectedTopics[0]?.source || 'fallback',

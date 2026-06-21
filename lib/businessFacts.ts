@@ -205,13 +205,13 @@ export async function uploadBusinessAsset(data: {
 
   if (uploadError) throw uploadError
 
-  // Get public URL
-  const { data: urlData } = supabase.storage
+  // Signed URL for PII check — job-assets is private, public URLs 404.
+  const { data: urlData } = await supabase.storage
     .from('job-assets')
-    .getPublicUrl(filename)
+    .createSignedUrl(filename, 3600)
 
   // Run PII check
-  const piiCheck = await detectPII(urlData.publicUrl)
+  const piiCheck = await detectPII(urlData?.signedUrl || '')
 
   // Create asset record
   const { data: asset, error } = await supabase
