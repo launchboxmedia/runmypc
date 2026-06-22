@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { scrapeNicheContent } from '@/lib/apify'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendMessage, buildStepUpdateMessage } from '@/lib/telegram'
+import { clip, stripLoneSurrogates } from '@/lib/sanitizeUnicode'
 
 let anthropic: Anthropic
 let openai: OpenAI
@@ -279,8 +280,8 @@ No examples provided - reason fresh per niche.`
               .filter(block => block.includes('r/') || block.includes('comments'))
               .slice(0, 10)
               .map(block => ({
-                title: block.split('\n')[0] || '',
-                selftext: block.split('\n').slice(1).join(' ').slice(0, 500)
+                title: stripLoneSurrogates(block.split('\n')[0] || ''),
+                selftext: clip(block.split('\n').slice(1).join(' '), 500)
               }))
 
             if (threads.length > 0) {
@@ -319,8 +320,8 @@ No examples provided - reason fresh per niche.`
           const articles = await scrapeMultipleUrls(urls.slice(0, 3))
 
           return articles.map(a => ({
-            title: a.title || '',
-            content: a.content.slice(0, 2000),
+            title: stripLoneSurrogates(a.title || ''),
+            content: clip(a.content, 2000),
             url: a.url
           }))
         } catch {
@@ -406,21 +407,21 @@ INSTAGRAM:
 ${approvedInstagram.slice(0, 5).map((p: any) => {
   const likes = p.likesCount || p.likes || 0
   const caption = p.caption || p.text || ''
-  return `- "${caption.slice(0, 150)}" — ${likes} likes`
+  return `- "${clip(caption, 150)}" — ${likes} likes`
 }).join('\n')}
 
 TIKTOK:
 ${approvedTikTok.slice(0, 5).map((p: any) => {
   const likes = p.diggCount || p.likes || 0
   const text = p.text || p.desc || ''
-  return `- "${text.slice(0, 150)}" — ${likes} likes`
+  return `- "${clip(text, 150)}" — ${likes} likes`
 }).join('\n')}
 
 ${isB2B && approvedLinkedIn.length > 0 ? `LINKEDIN:
 ${approvedLinkedIn.slice(0, 5).map((p: any) => {
   const likes = p.likesCount || p.likes || 0
   const text = p.text || p.content || ''
-  return `- "${text.slice(0, 150)}" — ${likes} likes`
+  return `- "${clip(text, 150)}" — ${likes} likes`
 }).join('\n')}` : ''}
 
 Extract ONLY format patterns (hook style, structure, length, CTA convention).
