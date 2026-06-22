@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "remotion": "remotion studio",
-    "remotion:render": "remotion render"
+    "remotion:render": "remotion render",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "remotion": {
     "entryPoint": "./remotion/index.ts"
@@ -41,6 +43,8 @@
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.9"
   }
 }

@@ -1,0 +1,13 @@
+const { defineConfig } = require('vitest/config')
+
+module.exports = defineConfig({
+  test: {
+    environment: 'node',
+    include: ['lib/**/*.test.ts'],
+  },
+  resolve: {
+    alias: {
+      '@': '.',
+    },
+  },
+})
