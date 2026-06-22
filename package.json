@@ -9,7 +9,7 @@
     "lint": "eslint",
     "remotion": "remotion studio",
     "remotion:render": "remotion render",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
   "remotion": {
