@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
-import * as path from 'path'
 import { scrapeNicheContent } from '@/lib/apify'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendMessage, buildStepUpdateMessage } from '@/lib/telegram'
@@ -782,32 +781,31 @@ Respond ONLY with JSON:
         const contentMatch = instagramOutput.content.match(/\{[\s\S]*\}/)
         const instParsed = JSON.parse(contentMatch ? contentMatch[0] : instagramOutput.content)
 
-        // Extract insights from body copy
-        const bodyLines = (instParsed.body || '').split('\n').filter(Boolean)
-        const insights = bodyLines.slice(0, 5)
+        // Optional cover visual: first selected approved IMAGE asset (static/both).
+        let selectedAssetUrl: string | null = null
+        const coverAsset = selectedAssets.find((a: any) =>
+          typeof a.file_type === 'string' && a.file_type.startsWith('image')
+        )
+        if (coverAsset?.file_path) {
+          const { data: signed } = await supabase.storage
+            .from('job-assets')
+            .createSignedUrl(coverAsset.file_path, 3600)
+          selectedAssetUrl = signed?.signedUrl || null
+        }
 
-        // Build 7 slides
-        const slides = [
-          { content: instParsed.hook || primaryTopic, slideType: 'hook' as const },
-          ...insights.slice(0, 5).map((line: string) => ({
-            content: line.replace(/^[•\-✅→\d\.\s]+/, '').trim(),
-            slideType: 'insight' as const
-          })),
-          { content: instParsed.cta || 'Follow for more', slideType: 'cta' as const }
-        ].slice(0, 7)
-
-        const businessName = profile?.business_name || ''
-        const handle = profile?.instagram_handle || ''
-
-        const outputDir = path.join(process.cwd(), 'tmp', 'carousel', jobId)
-
-        const { renderCarousel } = await import('@/lib/remotionRender')
-        const slidePaths = await renderCarousel({
-          slides,
-          brandColor,
-          businessName,
-          handle,
-          outputDir
+        // Phase C: design-system carousel — resolve style, plan dynamic slides
+        // (cover=hook first, single CTA last), generate per-slide HTML, render
+        // PNGs via the static render service, quality-gate with retries.
+        const { generateCarousel } = await import('@/lib/carousel/generateCarousel')
+        const result = await generateCarousel({
+          job,
+          profile,
+          igPost: {
+            hook: instParsed.hook || primaryTopic,
+            body: instParsed.body || '',
+            cta: instParsed.cta || 'Follow for more',
+          },
+          selectedAssetUrl,
         })
 
         // Upload all slides. Store storage PATHS (not public URLs) — job-assets
@@ -815,13 +813,12 @@ Respond ONLY with JSON:
         const slideStoragePaths: string[] = []
         const uploadedUrls: string[] = []
 
-        for (let i = 0; i < slidePaths.length; i++) {
-          const slideBuffer = require('fs').readFileSync(slidePaths[i])
+        for (let i = 0; i < result.slides.length; i++) {
           const filename = `${job.user_id}/${jobId}/carousel/slide-${i + 1}.png`
 
           const { error } = await supabase.storage
             .from('job-assets')
-            .upload(filename, slideBuffer, { contentType: 'image/png' })
+            .upload(filename, result.slides[i].png, { contentType: 'image/png', upsert: true })
 
           if (!error) {
             slideStoragePaths.push(filename)
@@ -830,8 +827,6 @@ Respond ONLY with JSON:
               .createSignedUrl(filename, 3600) // 1 hour expiry
             if (urlData?.signedUrl) uploadedUrls.push(urlData.signedUrl)
           }
-
-          require('fs').unlinkSync(slidePaths[i])
         }
 
         if (slideStoragePaths.length > 0) {
@@ -839,16 +834,24 @@ Respond ONLY with JSON:
             job_id: jobId,
             output_type: 'static_creative',
             platform: 'instagram_carousel',
-            label: 'Instagram Carousel (7 Slides)',
+            label: `Instagram Carousel (${slideStoragePaths.length} Slides)`,
             url: uploadedUrls[0] || '',
             metadata: {
               type: 'carousel',
               storage_path: slideStoragePaths[0],
               slide_paths: slideStoragePaths,
               slide_urls: uploadedUrls,
-              slide_count: slideStoragePaths.length
+              slide_count: slideStoragePaths.length,
+              design_source: result.resolved.source,
+              style_id: result.resolved.style_id,
             }
           })
+
+          // Persist the resolved design system onto the job (jobs-only writer).
+          const { persistJobStyle } = await import('@/lib/designSystem/persistJobStyle')
+          await persistJobStyle(jobId, result.resolved).catch(err =>
+            console.error('persistJobStyle failed:', err)
+          )
         }
 
         await updateStep(supabase, jobId, 'generate-instagram-carousel', 'completed')
