@@ -81,6 +81,8 @@ export default function ProfilePage() {
               .createSignedUrl(path, 3600)
             if (signedData?.signedUrl) setLogoSignedUrl(signedData.signedUrl)
           }
+          // Backfill: ensure an existing logo is a selectable approved asset.
+          fetch('/api/design-system/sync-logo', { method: 'POST' }).catch(() => {})
         }
 
         if (data.profile_photo_url) {
@@ -177,6 +179,9 @@ export default function ProfilePage() {
         research_instagram_usernames: profile.research_instagram_usernames
       })
       .eq('id', profile.id)
+
+    // Materialize the logo as a selectable, approved business asset (idempotent).
+    fetch('/api/design-system/sync-logo', { method: 'POST' }).catch(() => {})
 
     setSaving(false)
     setSaved(true)
