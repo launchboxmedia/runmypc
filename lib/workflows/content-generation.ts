@@ -97,6 +97,24 @@ ${profile.brand_voice_examples ? `Voice examples:\n${profile.brand_voice_example
 
     const { anthropic } = getClients()
 
+    // Phase D: resolve the design system ONCE per job. Static creatives, the
+    // carousel, and the cinematic hero all consume the SAME resolved style, so
+    // the whole campaign is visually cohesive. Persist once here (jobs-only).
+    const { resolveDesignSystem } = await import('@/lib/designSystem/resolveDesignSystem')
+    const { describeDesignSystem } = await import('@/lib/designSystem/describeForPrompt')
+    const resolvedDesign = await resolveDesignSystem({
+      job: {
+        style_id: job.style_id, primary_color: job.primary_color, split_image_cover: job.split_image_cover,
+        topic: job.topic, target_audience: job.target_audience, outcome: job.outcome,
+      },
+      profile: profile
+        ? { style_id: profile.style_id, primary_color: profile.primary_color, split_image_cover: profile.split_image_cover }
+        : null,
+    })
+    const designFragment = describeDesignSystem(resolvedDesign)
+    const { persistJobStyle } = await import('@/lib/designSystem/persistJobStyle')
+    await persistJobStyle(jobId, resolvedDesign).catch(err => console.error('persistJobStyle failed:', err))
+
     // Step 0: Semantic expansion - convert flat term into platform-optimized variants
     const extractionResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -600,9 +618,6 @@ Respond ONLY with JSON:
     await updateStep(supabase, jobId, 'generate-static-creatives', 'running')
     await notifyStep(supabase, job.user_id, 'Creating static visuals', 'content_generation')
 
-    // Neutral fallback when the customer has no brand color set — never RunMyPC's.
-    const brandColor = profile?.brand_colors?.split(',')[0]?.trim() || '#111827'
-
     // Fetch selected business assets for static creatives
     // Only use assets explicitly selected for this job
     const { data: selectedAssetJoins } = await supabase
@@ -625,42 +640,44 @@ Respond ONLY with JSON:
       a.business_fact_id && resultFacts.some(f => f.id === a.business_fact_id)
     )
 
+    // Phase D: every creative carries the resolved design system (palette +
+    // aesthetic) so the campaign is cohesive with the customer's chosen style.
     const CREATIVE_SPECS = [
       {
         platform: 'instagram',
         label: 'Instagram Square',
         size: '1024x1024' as const,
-        prompt: `Professional social media creative for Instagram. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Brand color: ${brandColor}. Clean, bold, scroll-stopping design. Illustrative/stylistic, not a fake screenshot.`
+        prompt: `Professional social media creative for Instagram. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. ${designFragment} Clean, bold, scroll-stopping, illustrative (not a fake screenshot).`
       },
       {
         platform: 'instagram_story',
         label: 'Instagram Story',
         size: '1024x1536' as const,
-        prompt: `Vertical Instagram story creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Brand color: ${brandColor}. Bold vertical format.`
+        prompt: `Vertical Instagram story creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. ${designFragment} Bold vertical format.`
       },
       {
         platform: 'tiktok',
         label: 'TikTok Thumbnail',
         size: '1024x1536' as const,
-        prompt: `TikTok video thumbnail. Topic: ${primaryTopic}. Attention-grabbing, bold, energetic. Brand color: ${brandColor}. Vertical format.`
+        prompt: `TikTok video thumbnail. Topic: ${primaryTopic}. Attention-grabbing, bold, energetic. ${designFragment} Vertical format.`
       },
       {
         platform: 'youtube',
         label: 'YouTube Thumbnail',
         size: '1536x1024' as const,
-        prompt: `YouTube video thumbnail. Topic: ${primaryTopic}. Bold text space on left, visual on right. High contrast. Brand color: ${brandColor}. Horizontal format.`
+        prompt: `YouTube video thumbnail. Topic: ${primaryTopic}. Bold text space on left, visual on right, high contrast. ${designFragment} Horizontal format.`
       },
       {
         platform: 'linkedin',
         label: 'LinkedIn Banner',
         size: '1536x1024' as const,
-        prompt: `Professional LinkedIn post image. Topic: ${primaryTopic}. Clean, corporate but engaging. Brand color: ${brandColor}. Horizontal format.`
+        prompt: `Professional LinkedIn post image. Topic: ${primaryTopic}. Clean, corporate but engaging. ${designFragment} Horizontal format.`
       },
       {
         platform: 'facebook',
         label: 'Facebook Ad',
         size: '1536x1024' as const,
-        prompt: `Facebook ad creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Trust-building, professional. Brand color: ${brandColor}.`
+        prompt: `Facebook ad creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. Trust-building, professional. ${designFragment}`
       }
     ]
 
@@ -806,6 +823,7 @@ Respond ONLY with JSON:
             cta: instParsed.cta || 'Follow for more',
           },
           selectedAssetUrl,
+          resolved: resolvedDesign, // Phase D: reuse the once-resolved system
         })
 
         // Upload all slides. Store storage PATHS (not public URLs) — job-assets
@@ -846,12 +864,7 @@ Respond ONLY with JSON:
               style_id: result.resolved.style_id,
             }
           })
-
-          // Persist the resolved design system onto the job (jobs-only writer).
-          const { persistJobStyle } = await import('@/lib/designSystem/persistJobStyle')
-          await persistJobStyle(jobId, result.resolved).catch(err =>
-            console.error('persistJobStyle failed:', err)
-          )
+          // Design system already persisted once at the top of the job (Phase D).
         }
 
         await updateStep(supabase, jobId, 'generate-instagram-carousel', 'completed')
@@ -1031,11 +1044,13 @@ Respond ONLY with JSON:
           .map((asset: any) => asset.file_path)
           .filter(Boolean) as string[]
 
-        // Brand-neutral cinematic prompt — works for any niche.
+        // Phase D: cinematic hero carries the resolved palette/aesthetic as the
+        // color grade + mood, so the hero video matches the rest of the campaign.
         const prompt = `A bold, modern cinematic vertical video about: ${selectedTopic}.
 ${factsContext ? `Key context: ${factsContext}` : ''}
+${designFragment}
 Style: high production value, dynamic camera movement, clean professional lighting,
-strong visual storytelling. Cohesive, contemporary aesthetic suited to the topic.
+cohesive contemporary aesthetic. Apply the color palette above as the grade and mood.
 9:16 vertical format for social media.
 No text overlay. Pure visual storytelling.`
 
