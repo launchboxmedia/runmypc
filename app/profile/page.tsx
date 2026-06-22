@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import BusinessFactsManager from '@/components/BusinessFactsManager'
+import { StylePicker } from '@/components/StylePicker'
+import type { StyleId } from '@/lib/designSystem/styleLibrary'
 
 type Profile = {
   id: string
@@ -18,6 +20,9 @@ type Profile = {
   words_to_avoid: string | null
   logo_url: string | null
   brand_colors: string | null
+  style_id: string | null
+  primary_color: string | null
+  split_image_cover: boolean
   profile_photo_url: string | null
   instagram_handle: string | null
   tiktok_handle: string | null
@@ -92,6 +97,20 @@ export default function ProfilePage() {
     loadProfile()
   }, [])
 
+  // Pre-fill the primary color from the customer's approved logo when none set.
+  useEffect(() => {
+    if (!profile || profile.primary_color) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/design-system/extract-color', { method: 'POST' })
+        const { hex } = await res.json()
+        if (!cancelled && hex) update('primary_color', hex)
+      } catch { /* leave picker empty */ }
+    })()
+    return () => { cancelled = true }
+  }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleSave() {
     if (!profile) return
     setSaving(true)
@@ -141,6 +160,9 @@ export default function ProfilePage() {
         words_to_avoid: profile.words_to_avoid,
         logo_url: profile.logo_url,
         brand_colors: profile.brand_colors,
+        style_id: profile.style_id,
+        primary_color: profile.primary_color,
+        split_image_cover: profile.split_image_cover,
         profile_photo_url: profile.profile_photo_url,
         instagram_handle: profile.instagram_handle,
         tiktok_handle: profile.tiktok_handle,
@@ -269,6 +291,41 @@ export default function ProfilePage() {
           </Field>
           <Field label="Brand Colors" hint="Hex codes separated by commas">
             <Input value={profile.brand_colors || ''} onChange={v => update('brand_colors', v)} placeholder="#E8622A, #000000, #FFFFFF" />
+          </Field>
+        </Section>
+
+        {/* Section — Carousel Design */}
+        <Section title="Carousel Design">
+          <Field label="Style" hint="Pick the design system for your carousels">
+            <StylePicker
+              value={(profile.style_id as StyleId) || null}
+              onChange={id => update('style_id', id)}
+            />
+          </Field>
+          <Field label="Primary Color" hint="Optional — auto-filled from your logo. Accent & background are derived from this.">
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={profile.primary_color || '#111827'}
+                onChange={e => update('primary_color', e.target.value)}
+                className="h-11 w-14 rounded-lg border border-gray-700 bg-gray-900 p-1 cursor-pointer"
+              />
+              <Input
+                value={profile.primary_color || ''}
+                onChange={v => update('primary_color', v)}
+                placeholder="#2563EB"
+              />
+            </div>
+          </Field>
+          <Field label="Split-image cover" hint="One image spans the first two slides">
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={!!profile.split_image_cover}
+                onChange={e => setProfile(prev => prev ? { ...prev, split_image_cover: e.target.checked } : prev)}
+              />
+              Enable split-image cover
+            </label>
           </Field>
         </Section>
 
