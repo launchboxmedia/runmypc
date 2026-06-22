@@ -798,10 +798,29 @@ Respond ONLY with JSON:
         const contentMatch = instagramOutput.content.match(/\{[\s\S]*\}/)
         const instParsed = JSON.parse(contentMatch ? contentMatch[0] : instagramOutput.content)
 
-        // Optional cover visual: first selected approved IMAGE asset (static/both).
+        // Helper: fetch a selected asset's bytes as a base64 data-URI (the render
+        // lambda has no egress, so images must be embedded, not linked).
+        const toDataUri = async (filePath: string): Promise<string | null> => {
+          const { data: signed } = await supabase.storage.from('job-assets').createSignedUrl(filePath, 3600)
+          if (!signed?.signedUrl) return null
+          try {
+            const res = await fetch(signed.signedUrl)
+            if (!res.ok) return null
+            const buf = Buffer.from(await res.arrayBuffer())
+            const mime = res.headers.get('content-type') || 'image/png'
+            return `data:${mime};base64,${buf.toString('base64')}`
+          } catch { return null }
+        }
+
+        // Brand logo (if selected): stamped as a mark on every slide. Excluded
+        // from the cover-visual choice — a logo must never become the hero image.
+        const logoAsset = selectedAssets.find((a: any) => a.asset_type === 'logo')
+        const logoDataUri = logoAsset?.file_path ? await toDataUri(logoAsset.file_path) : null
+
+        // Optional cover visual: first selected approved IMAGE asset that is NOT the logo.
         let selectedAssetUrl: string | null = null
         const coverAsset = selectedAssets.find((a: any) =>
-          typeof a.file_type === 'string' && a.file_type.startsWith('image')
+          a.asset_type !== 'logo' && typeof a.file_type === 'string' && a.file_type.startsWith('image')
         )
         if (coverAsset?.file_path) {
           const { data: signed } = await supabase.storage
@@ -823,6 +842,7 @@ Respond ONLY with JSON:
             cta: instParsed.cta || 'Follow for more',
           },
           selectedAssetUrl,
+          logoDataUri, // brand mark stamped on every slide
           resolved: resolvedDesign, // Phase D: reuse the once-resolved system
         })
 

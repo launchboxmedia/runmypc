@@ -34,11 +34,27 @@ const defaultDeps: SlideHtmlDeps = {
 // "NO GLYPH" placeholder marker where it wanted an icon it can't load. Remove
 // any element whose visible content is that placeholder, then scrub stray text.
 export function stripGlyphPlaceholders(html: string): string {
+  // Tolerate inter-letter whitespace ("N O  G L Y P H") and hyphen/underscore
+  // separators — Haiku sometimes letter-spaces the placeholder or puts it in an
+  // SVG <text>, which a tight literal match would miss.
+  const placeholder = /n\s*o[\s\-_]*g\s*l\s*y\s*p\s*h/gi
   return html
     // drop a wrapping tag whose entire text content is the placeholder
-    .replace(/<([a-z]+)([^>]*)>\s*no[\s\-_]*glyph\s*<\/\1>/gi, '')
-    // scrub any leftover literal occurrences
-    .replace(/no[\s\-_]*glyph/gi, '')
+    .replace(new RegExp(`<([a-z]+)([^>]*)>\\s*${placeholder.source}\\s*<\\/\\1>`, 'gi'), '')
+    // scrub any leftover occurrences (incl. inside <text>/<style>/attributes)
+    .replace(placeholder, '')
+}
+
+// Deterministically stamp a brand logo into the top-left corner of a slide. Not
+// Haiku-dependent: injected after generation so placement is consistent every
+// time. position:fixed is relative to the render viewport (the slide). Returns
+// the html unchanged when there is no logo.
+export function stampLogo(html: string, logoDataUri: string | null | undefined): string {
+  if (!logoDataUri) return html
+  const mark = `<img src="${logoDataUri}" alt="" style="position:fixed;bottom:44px;left:44px;height:56px;width:auto;max-width:200px;object-fit:contain;z-index:2147483647;pointer-events:none;" />`
+  const idx = html.toLowerCase().lastIndexOf('</body>')
+  if (idx === -1) return html + mark
+  return html.slice(0, idx) + mark + html.slice(idx)
 }
 
 // Pull the HTML document out of any markdown fences / stray prose Haiku adds.
@@ -54,9 +70,10 @@ function buildPrompt(input: {
   slide: SlidePlan
   handle?: string
   hasCoverVisual: boolean
+  hasLogo: boolean
   retryNote?: string
 }): string {
-  const { resolved, slide, handle, hasCoverVisual, retryNote } = input
+  const { resolved, slide, handle, hasCoverVisual, hasLogo, retryNote } = input
   const style = STYLE_LIBRARY[resolved.style_id]
   const role = slide.isCover ? 'COVER / HOOK (slide 1)' : slide.beat === 'cta' ? 'final CTA slide' : 'value slide'
 
@@ -91,6 +108,7 @@ function buildPrompt(input: {
     `- Hook device: ${style.hook_technique}`,
     coverImageInstruction,
     slide.beat === 'cta' ? `- This is the single closing call-to-action. Make the action obvious and bold.` : '',
+    hasLogo ? `- A brand logo will be placed in the BOTTOM-LEFT corner (about 210x90px). Keep that corner clear — no text, badges, page dots, or key elements there.` : '',
     retryNote ? `\nPREVIOUS RENDER FAILED QA: ${retryNote}\nFix specifically: enlarge/relayout so ALL text is fully visible, legible, and high-contrast against the background.` : '',
   ]
     .filter(Boolean)
@@ -103,16 +121,19 @@ export async function generateSlideHtml(
     slide: SlidePlan
     handle?: string
     coverVisualDataUri?: string | null
+    logoDataUri?: string | null
     retryNote?: string
   },
   deps: SlideHtmlDeps = defaultDeps
 ): Promise<string> {
   const hasCoverVisual = Boolean(input.slide.isCover && input.coverVisualDataUri)
+  const hasLogo = Boolean(input.logoDataUri)
   const prompt = buildPrompt({
     resolved: input.resolved,
     slide: input.slide,
     handle: input.handle,
     hasCoverVisual,
+    hasLogo,
     retryNote: input.retryNote,
   })
 
@@ -125,6 +146,9 @@ export async function generateSlideHtml(
     // No visual: remove any stray cover-image tag and leftover token.
     html = html.replace(/<img[^>]*id=["']cover-visual["'][^>]*>/gi, '').split(COVER_TOKEN).join('')
   }
+
+  // Deterministic brand-mark stamp (top-left), independent of Haiku.
+  html = stampLogo(html, input.logoDataUri)
 
   return html
 }

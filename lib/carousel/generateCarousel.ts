@@ -37,6 +37,8 @@ export async function generateCarousel(input: {
   profile: ProfileInput
   igPost: { hook: string; body: string; cta: string }
   selectedAssetUrl?: string | null
+  // Optional brand logo (base64 data-URI) stamped on every slide as a mark.
+  logoDataUri?: string | null
   // Phase D: pass a pre-resolved system so the carousel matches the rest of the
   // campaign (statics/cinematic) and we resolve once per job. Falls back to
   // resolving here if omitted.
@@ -72,13 +74,14 @@ export async function generateCarousel(input: {
 
   const coverSlide = plan.find(s => s.isCover)
   const bodySlides = plan.filter(s => !s.isCover)
+  const logoDataUri = input.logoDataUri ?? null
 
   // Cover slide: wait only for the cover visual, then render.
   const coverPromise: Promise<CarouselSlideResult | null> = coverSlide
     ? coverVisualPromise.then(async cover => ({
         index: coverSlide.index,
         beat: coverSlide.beat,
-        png: await renderSlideWithGate(coverSlide, resolved, cover?.dataUri ?? null, handle),
+        png: await renderSlideWithGate(coverSlide, resolved, cover?.dataUri ?? null, handle, logoDataUri),
       }))
     : Promise.resolve(null)
 
@@ -86,7 +89,7 @@ export async function generateCarousel(input: {
   const bodyPromise = mapWithConcurrency(bodySlides, SLIDE_CONCURRENCY, async slide => ({
     index: slide.index,
     beat: slide.beat,
-    png: await renderSlideWithGate(slide, resolved, null, handle),
+    png: await renderSlideWithGate(slide, resolved, null, handle, logoDataUri),
   }))
 
   const [coverResult, bodyResults] = await Promise.all([coverPromise, bodyPromise])
@@ -100,7 +103,8 @@ async function renderSlideWithGate(
   slide: SlidePlan,
   resolved: GenerateCarouselResult['resolved'],
   coverVisualDataUri: string | null,
-  handle: string | undefined
+  handle: string | undefined,
+  logoDataUri: string | null
 ): Promise<Buffer> {
   let retryNote: string | undefined
   let lastPng: Buffer | null = null
@@ -111,6 +115,7 @@ async function renderSlideWithGate(
       slide,
       handle,
       coverVisualDataUri: slide.isCover ? coverVisualDataUri : null,
+      logoDataUri,
       retryNote,
     })
     const png = await renderStaticPng(html) // hard render error propagates → Step 4 marks failed

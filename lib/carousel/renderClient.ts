@@ -7,12 +7,47 @@ const DEFAULT_WIDTH = 1080
 const DEFAULT_HEIGHT = 1350 // 4:5 portrait
 
 const DEFAULT_TIMEOUT_MS = 60000
+const MAX_RENDER_ATTEMPTS = 3 // 1 + 2 retries on transient failures
 
+// The render lambda occasionally 500s transiently (e.g. "spawn ETXTBSY" — the
+// Chromium binary busy under concurrency) or times out. Retry those with a short
+// backoff so a single flaky render doesn't sink the whole carousel. 4xx (bad
+// request) is not retried.
 export async function renderStaticPng(
   html: string,
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
   timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<Buffer> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
+    try {
+      return await renderOnce(html, width, height, timeoutMs)
+    } catch (e) {
+      lastErr = e
+      if (!isTransient(e) || attempt === MAX_RENDER_ATTEMPTS) throw e
+      await new Promise(r => setTimeout(r, 400 * attempt)) // 400ms, 800ms
+    }
+  }
+  throw lastErr
+}
+
+// A render failure worth retrying: a 5xx response, a timeout, or a network error
+// (but never a 4xx bad-request — that won't fix itself).
+function isTransient(e: unknown): boolean {
+  if (!(e instanceof Error)) return false
+  if (/timed out/i.test(e.message)) return true
+  const m = e.message.match(/render failed \((\d{3})\)/i)
+  if (m) return Number(m[1]) >= 500
+  // Bare fetch/network errors carry no status — treat as transient.
+  return !/render returned no url|failed to fetch rendered png \(4\d\d\)/i.test(e.message)
+}
+
+async function renderOnce(
+  html: string,
+  width: number,
+  height: number,
+  timeoutMs: number
 ): Promise<Buffer> {
   const url = process.env.HYPERFRAMES_RENDER_URL
   if (!url) throw new Error('HYPERFRAMES_RENDER_URL not configured')

@@ -1,6 +1,30 @@
 import { describe, it, expect } from 'vitest'
-import { extractHtml, stripGlyphPlaceholders } from './slideHtml'
+import { extractHtml, stripGlyphPlaceholders, stampLogo } from './slideHtml'
 import { sniffMediaType } from './scoreVisual'
+
+describe('stampLogo', () => {
+  const uri = 'data:image/png;base64,AAAA'
+
+  it('injects one logo img before the closing </body>', () => {
+    const out = stampLogo('<html><body><h1>Hi</h1></body></html>', uri)
+    expect(out).toContain(uri)
+    expect((out.match(/<img[^>]*data:image\/png/g) || []).length).toBe(1)
+    expect(out.indexOf(uri)).toBeLessThan(out.indexOf('</body>'))
+    expect(out).toContain('position:fixed')
+    expect(out).toContain('bottom:44px')
+  })
+
+  it('appends when there is no body tag', () => {
+    const out = stampLogo('<div>x</div>', uri)
+    expect(out).toContain(uri)
+    expect(out.indexOf('<div>x</div>')).toBeLessThan(out.indexOf(uri))
+  })
+
+  it('returns html unchanged for null/empty data-uri', () => {
+    expect(stampLogo('<body>x</body>', null)).toBe('<body>x</body>')
+    expect(stampLogo('<body>x</body>', '')).toBe('<body>x</body>')
+  })
+})
 
 describe('stripGlyphPlaceholders', () => {
   it('removes a wrapping element whose text is the NO GLYPH placeholder', () => {
@@ -11,6 +35,11 @@ describe('stripGlyphPlaceholders', () => {
   })
   it('scrubs stray hyphenated/spaced variants', () => {
     expect(stripGlyphPlaceholders('a no-glyph b NO_GLYPH c no glyph')).toBe('a  b  c ')
+  })
+  it('scrubs letter-spaced text and removes a placeholder-only element', () => {
+    expect(stripGlyphPlaceholders('x N O G L Y P H y')).toBe('x  y')
+    // a wrapping element whose entire content is the placeholder is removed whole
+    expect(stripGlyphPlaceholders('<text>N O  G L Y P H</text>')).toBe('')
   })
   it('leaves clean html untouched', () => {
     expect(stripGlyphPlaceholders('<h1>Speed up</h1>')).toBe('<h1>Speed up</h1>')
