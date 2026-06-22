@@ -22,9 +22,18 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
     cta: 'Run a free scan with RunMyPC',
   }
 
-  const styles: StyleId[] = ['bold_personal', 'clean_direct']
+  // primaryColor:null forces the implied_tone fallback (e.g. premium_editorial's
+  // bronze) so we can verify that flagged palette against real composited photo.
+  const cases: { styleId: StyleId; primaryColor: string | null; split?: boolean; assetUrl?: string | null }[] = [
+    { styleId: 'bold_personal', primaryColor: '#2563EB' },
+    { styleId: 'clean_direct', primaryColor: '#2563EB' }, // has the comparison slide
+    { styleId: 'premium_editorial', primaryColor: null }, // bronze implied_tone fallback
+    // To spot-check bronze over real composited photography, set split:true and
+    // assetUrl to a real image (the split layout keeps the headline on the solid
+    // half). Left out of the default set to avoid a network dependency.
+  ]
 
-  it.each(styles)('renders an on-brand carousel for style %s', async (styleId) => {
+  it.each(cases)('renders an on-brand carousel for style $styleId (split=$split)', async ({ styleId, primaryColor, split, assetUrl }) => {
     const result = await generateCarousel({
       job: {
         id: 'verify-job',
@@ -32,12 +41,12 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
         target_audience: 'everyday PC owners',
         outcome: 'a faster computer',
         style_id: styleId, // force the style (no Haiku classify needed)
-        primary_color: '#2563EB',
-        split_image_cover: false,
+        primary_color: primaryColor,
+        split_image_cover: split ?? false,
       },
       profile: { instagram_handle: 'runmypc' },
       igPost,
-      selectedAssetUrl: null, // exercise the generate-2-variants + vision-score path
+      selectedAssetUrl: assetUrl ?? null,
     })
 
     expect(result.slides.length).toBeGreaterThanOrEqual(3)

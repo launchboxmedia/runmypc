@@ -32,4 +32,30 @@ describe('derivePalette', () => {
     expect(p.primary).toMatch(HEX)
     expect(wcagContrast(p.primary, p.background)).toBeGreaterThanOrEqual(4.5)
   })
+
+  // Accent must be legible as text on the background — previously unguarded, the
+  // fixed l:0.55 accent landed at ~3.4:1 on light canvases (the low-contrast
+  // comparison-label bug). Guard it on every style for any customer color.
+  it('accent is legible (>=4.5:1) against the background on light-canvas styles', () => {
+    for (const style of ['clean_direct', 'premium_editorial'] as const) {
+      for (const primary of ['#2563EB', '#E11D48', '#0EA5E9', '#16A34A']) {
+        const p = derivePalette(style, primary)
+        expect(wcagContrast(p.accent, p.background)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('accent is legible (>=4.5:1) against the background on dark-canvas styles', () => {
+    for (const style of ['bold_personal', 'sharp_professional'] as const) {
+      for (const primary of ['#FFFFFF', '#2563EB', '#F59E0B']) {
+        const p = derivePalette(style, primary)
+        expect(wcagContrast(p.accent, p.background)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('keeps the accent a distinct pop hue, not collapsed onto the primary', () => {
+    const p = derivePalette('clean_direct', '#2563EB')
+    expect(p.accent.toLowerCase()).not.toBe(p.primary.toLowerCase())
+  })
 })
