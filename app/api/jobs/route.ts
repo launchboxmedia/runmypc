@@ -134,11 +134,16 @@ export async function POST(req: Request) {
 
   const adminSupabase = createAdminClient()
 
-  const { topic, target_audience, outcome, mode, flipbookpro_url, selected_asset_ids } = await req.json().catch(() => ({}))
+  const { topic, target_audience, outcome, mode, flipbookpro_url, selected_asset_ids, style_id, primary_color, split_image_cover } = await req.json().catch(() => ({}))
   if (!topic?.trim()) return NextResponse.json({ error: 'Topic is required.' }, { status: 400 })
   if (!target_audience?.trim()) return NextResponse.json({ error: 'Target audience is required.' }, { status: 400 })
   if (!outcome?.trim()) return NextResponse.json({ error: 'Outcome is required.' }, { status: 400 })
   if (!['full_run', 'ebook_only', 'content_only', 'ads_only'].includes(mode)) return NextResponse.json({ error: 'Invalid mode.' }, { status: 400 })
+
+  const VALID_STYLE_IDS = ['bold_personal', 'clean_direct', 'warm_handmade', 'sharp_professional', 'premium_editorial']
+  if (style_id != null && !VALID_STYLE_IDS.includes(style_id)) {
+    return NextResponse.json({ error: 'Invalid style_id.' }, { status: 400 })
+  }
 
   // Only check API key for modes that generate ebooks
   if (mode === 'full_run' || mode === 'ebook_only') {
@@ -169,6 +174,9 @@ export async function POST(req: Request) {
       outcome: outcome.trim(),
       mode,
       // flipbookpro_url: flipbookpro_url || null, // TODO: Add column migration
+      style_id: style_id ?? null,
+      primary_color: primary_color ?? null,
+      split_image_cover: split_image_cover === true,
       status: 'queued',
       current_phase: startingPhase
     })

@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { StylePicker } from '@/components/StylePicker'
+import type { StyleId } from '@/lib/designSystem/styleLibrary'
 
 type BusinessAsset = {
   id: string
@@ -21,6 +23,9 @@ export default function Home() {
   const [approvedAssets, setApprovedAssets] = useState<BusinessAsset[]>([])
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
   const [assetSignedUrls, setAssetSignedUrls] = useState<Record<string, string>>({})
+  const [overrideStyle, setOverrideStyle] = useState<StyleId | null>(null)
+  const [overrideColor, setOverrideColor] = useState<string>('')
+  const [overrideSplit, setOverrideSplit] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -89,7 +94,10 @@ export default function Home() {
         outcome,
         mode,
         flipbookpro_url: flipbookproUrl || null,
-        selected_asset_ids: selectedAssetIds
+        selected_asset_ids: selectedAssetIds,
+        style_id: overrideStyle ?? undefined,
+        primary_color: overrideColor || undefined,
+        split_image_cover: overrideSplit || undefined
       })
     })
 
@@ -295,6 +303,34 @@ export default function Home() {
             />
           </div>
         )}
+
+        {/* Optional per-job design override */}
+        <details className="mb-6 rounded-lg border border-gray-700 p-4">
+          <summary className="cursor-pointer text-sm font-medium text-gray-400 uppercase tracking-widest">
+            Override design for this job (optional)
+          </summary>
+          <div className="mt-4 space-y-4">
+            <StylePicker value={overrideStyle} onChange={setOverrideStyle} />
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={overrideColor || '#111827'}
+                onChange={e => setOverrideColor(e.target.value)}
+                className="h-11 w-14 rounded-lg border border-gray-700 bg-gray-900 p-1 cursor-pointer"
+              />
+              <input
+                value={overrideColor}
+                onChange={e => setOverrideColor(e.target.value)}
+                placeholder="#2563EB (optional)"
+                className="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-3 text-white placeholder-gray-600 focus:outline-none focus:border-[#E8622A]"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input type="checkbox" checked={overrideSplit} onChange={e => setOverrideSplit(e.target.checked)} />
+              Split-image cover for this job
+            </label>
+          </div>
+        </details>
 
         {/* Error */}
         {error && (

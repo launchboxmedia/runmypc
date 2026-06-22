@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "remotion": "remotion studio",
-    "remotion:render": "remotion render"
+    "remotion:render": "remotion render",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "remotion": {
     "entryPoint": "./remotion/index.ts"
@@ -21,9 +23,11 @@
     "@supabase/supabase-js": "^2.108.1",
     "@types/uuid": "^10.0.0",
     "archiver": "^8.0.0",
+    "culori": "^4.0.2",
     "dotenv": "^17.4.2",
     "hyperframes": "^0.6.112",
     "next": "16.2.9",
+    "node-vibrant": "^4.0.4",
     "openai": "^6.42.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -41,6 +45,8 @@
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.9"
   }
 }
