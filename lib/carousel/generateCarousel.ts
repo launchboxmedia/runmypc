@@ -8,9 +8,13 @@ import { resolveCoverVisual } from './coverVisual'
 import { generateSlideHtml } from './slideHtml'
 import { renderStaticPng } from './renderClient'
 import { checkSlide } from './qualityGate'
+import { mapWithConcurrency } from './concurrency'
 import type { CarouselSlideResult, GenerateCarouselResult, SlidePlan } from './types'
 
 const MAX_RETRIES = 2
+// Bounds concurrent Haiku + render calls per carousel against provider rate
+// limits while still collapsing most of the serial slide latency.
+const SLIDE_CONCURRENCY = 4
 
 type JobInput = {
   id: string
@@ -55,21 +59,39 @@ export async function generateCarousel(input: {
   })
 
   const plan = buildSlidePlan(igPost)
+  const handle = profile?.instagram_handle || undefined
 
-  const cover = await resolveCoverVisual({
+  // Kick off the slow cover-visual generation WITHOUT awaiting, so body slides
+  // (which don't need it) render in parallel while the image model works.
+  const coverVisualPromise = resolveCoverVisual({
     resolved,
     topic: job.topic,
     audience: job.target_audience,
     selectedAssetUrl,
   })
 
-  const handle = profile?.instagram_handle || undefined
-  const slides: CarouselSlideResult[] = []
+  const coverSlide = plan.find(s => s.isCover)
+  const bodySlides = plan.filter(s => !s.isCover)
 
-  for (const slide of plan) {
-    const png = await renderSlideWithGate(slide, resolved, cover?.dataUri ?? null, handle)
-    slides.push({ index: slide.index, beat: slide.beat, png })
-  }
+  // Cover slide: wait only for the cover visual, then render.
+  const coverPromise: Promise<CarouselSlideResult | null> = coverSlide
+    ? coverVisualPromise.then(async cover => ({
+        index: coverSlide.index,
+        beat: coverSlide.beat,
+        png: await renderSlideWithGate(coverSlide, resolved, cover?.dataUri ?? null, handle),
+      }))
+    : Promise.resolve(null)
+
+  // Body slides: rendered concurrently (bounded) — independent of the cover visual.
+  const bodyPromise = mapWithConcurrency(bodySlides, SLIDE_CONCURRENCY, async slide => ({
+    index: slide.index,
+    beat: slide.beat,
+    png: await renderSlideWithGate(slide, resolved, null, handle),
+  }))
+
+  const [coverResult, bodyResults] = await Promise.all([coverPromise, bodyPromise])
+
+  const slides = [...(coverResult ? [coverResult] : []), ...bodyResults].sort((a, b) => a.index - b.index)
 
   return { resolved, slides }
 }
@@ -94,8 +116,11 @@ async function renderSlideWithGate(
     const png = await renderStaticPng(html) // hard render error propagates → Step 4 marks failed
     lastPng = png
 
+    // On the final allowed attempt the result is kept regardless, so skip the
+    // (wasted) gate call. Earlier attempts gate and retry on failure.
+    if (attempt === MAX_RETRIES) break
     const qa = await checkSlide(png, slide)
-    if (qa.pass || attempt === MAX_RETRIES) break
+    if (qa.pass) break
     retryNote = qa.issues // regenerate with the failure note
   }
 

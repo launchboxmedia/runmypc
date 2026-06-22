@@ -19,6 +19,10 @@ const defaults: CoverVisualDeps = {
   pickBestVisual: defaultPickBestVisual,
 }
 
+// Number of cover variants generated then vision-scored. Image generation is the
+// dominant dollar cost of a carousel — tune here. Default 2 (generate + pick best).
+const COVER_VARIANTS = 2
+
 async function fetchBuffer(url: string): Promise<Buffer> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`fetch visual failed (${res.status})`)
@@ -68,10 +72,9 @@ export async function resolveCoverVisual(
   // 2. Generate 2 text-free variants, score, pick winner.
   try {
     const prompt = buildPrompt(resolved.style_id, topic, audience)
-    const results = await Promise.allSettled([
-      deps.generateImage({ prompt }),
-      deps.generateImage({ prompt }),
-    ])
+    const results = await Promise.allSettled(
+      Array.from({ length: COVER_VARIANTS }, () => deps.generateImage({ prompt }))
+    )
     const urls = results
       .filter((r): r is PromiseFulfilledResult<{ url: string }> => r.status === 'fulfilled')
       .map(r => r.value.url)
