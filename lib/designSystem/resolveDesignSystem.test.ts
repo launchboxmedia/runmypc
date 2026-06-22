@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { resolveDesignSystem, type ResolveDeps } from './resolveDesignSystem'
-import { STYLE_LIBRARY } from './styleLibrary'
+import { STYLE_LIBRARY, type StyleId } from './styleLibrary'
 
 const job = { topic: 'productivity', target_audience: 'founders', outcome: 'ship faster' }
-const stubDeps = (id: any = 'warm_handmade'): ResolveDeps => ({
+const stubDeps = (id: StyleId = 'warm_handmade'): ResolveDeps => ({
   classifyStyle: vi.fn().mockResolvedValue(id),
 })
 

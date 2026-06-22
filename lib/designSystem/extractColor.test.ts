@@ -14,6 +14,6 @@ describe('extractDominantColor', () => {
     const hex = await extractDominantColor(buf)
     expect(hex).toMatch(/^#[0-9a-fA-F]{6}$/)
     const rgb = toRgb(parse(hex))!
-    expect(rgb.r).toBeGreaterThan(rgb.b) // warm
+    expect(rgb.r ?? 0).toBeGreaterThan(rgb.b ?? 0) // warm
   })
 })
