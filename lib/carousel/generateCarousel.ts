@@ -2,7 +2,7 @@
 // post, resolves a cover visual, then for each slide generates HTML, renders a
 // PNG via the static render service, and runs a quality gate with up to 2 retry
 // regenerations. Returns ordered slide PNGs (cover first, single CTA last).
-import { resolveDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
+import { resolveDesignSystem, type ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
 import { buildSlidePlan } from './buildSlidePlan'
 import { resolveCoverVisual } from './coverVisual'
 import { generateSlideHtml } from './slideHtml'
@@ -33,10 +33,14 @@ export async function generateCarousel(input: {
   profile: ProfileInput
   igPost: { hook: string; body: string; cta: string }
   selectedAssetUrl?: string | null
+  // Phase D: pass a pre-resolved system so the carousel matches the rest of the
+  // campaign (statics/cinematic) and we resolve once per job. Falls back to
+  // resolving here if omitted.
+  resolved?: ResolvedDesignSystem
 }): Promise<GenerateCarouselResult> {
   const { job, profile, igPost, selectedAssetUrl } = input
 
-  const resolved = await resolveDesignSystem({
+  const resolved = input.resolved ?? await resolveDesignSystem({
     job: {
       style_id: job.style_id,
       primary_color: job.primary_color,
