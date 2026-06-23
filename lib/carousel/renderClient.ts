@@ -86,3 +86,71 @@ async function renderOnce(
   if (!pngRes.ok) throw new Error(`Failed to fetch rendered PNG (${pngRes.status})`)
   return Buffer.from(await pngRes.arrayBuffer())
 }
+
+// Animated render: drives GSAP timeline frame-by-frame, returns MP4 Buffer.
+// Duration and fps must match the HTML's data-duration attribute.
+export async function renderAnimatedSlide(
+  html: string,
+  width = 1080,
+  height = 1350,
+  durationSeconds = 3,
+  fps = 30,
+  timeoutMs = 120000
+): Promise<Buffer> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
+    try {
+      return await renderAnimatedOnce(html, width, height, durationSeconds, fps, timeoutMs)
+    } catch (e) {
+      lastErr = e
+      if (!isTransient(e) || attempt === MAX_RENDER_ATTEMPTS) throw e
+      await new Promise(r => setTimeout(r, 400 * attempt))
+    }
+  }
+  throw lastErr
+}
+
+async function renderAnimatedOnce(
+  html: string,
+  width: number,
+  height: number,
+  durationSeconds: number,
+  fps: number,
+  timeoutMs: number
+): Promise<Buffer> {
+  const url = process.env.HYPERFRAMES_RENDER_URL
+  if (!url) throw new Error('HYPERFRAMES_RENDER_URL not configured')
+
+  const fetchSignal = () => AbortSignal.timeout(timeoutMs)
+
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, width, height, fps, durationInSeconds: durationSeconds }),
+      signal: fetchSignal(),
+    })
+  } catch (e) {
+    if (e instanceof Error && e.name === 'TimeoutError') throw new Error(`Animated render timed out after ${timeoutMs}ms`)
+    throw e
+  }
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '')
+    throw new Error(`Animated render failed (${res.status}): ${err.slice(0, 300)}`)
+  }
+
+  const data = (await res.json()) as { url?: string; error?: string }
+  if (!data.url) throw new Error(`Animated render returned no url: ${data.error || 'unknown'}`)
+
+  let mp4Res: Response
+  try {
+    mp4Res = await fetch(data.url, { signal: fetchSignal() })
+  } catch (e) {
+    if (e instanceof Error && e.name === 'TimeoutError') throw new Error(`Rendered MP4 fetch timed out after ${timeoutMs}ms`)
+    throw e
+  }
+  if (!mp4Res.ok) throw new Error(`Failed to fetch rendered MP4 (${mp4Res.status})`)
+  return Buffer.from(await mp4Res.arrayBuffer())
+}
