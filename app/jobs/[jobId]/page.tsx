@@ -78,10 +78,17 @@ export default function JobCanvas() {
     job.job_outputs.some(o => o.output_type === 'flipbook_url')
   )
 
+  // Content section stays active once ANY content output exists — not just a
+  // static_creative. (Instagram/TikTok statics were removed in favour of the
+  // carousel, so keying off static_creative alone hid the whole section when the
+  // carousel didn't produce one.)
+  const CONTENT_OUTPUT_TYPES = [
+    'static_creative', 'social_post', 'social_video', 'platform_video',
+    'cinematic_video', 'niche_research',
+  ]
   const isContentActive = ['full_run', 'content_only'].includes(job.mode) && (
     job.current_phase === 'content_generation' ||
-    job.job_outputs.some(o => o.output_type === 'static_creative' ||
-      (o.output_type === 'ad_copy' && o.metadata?.type === 'social_post'))
+    job.job_outputs.some(o => CONTENT_OUTPUT_TYPES.includes(o.output_type))
   )
 
   const isAdActive = ['full_run', 'ads_only'].includes(job.mode) && (

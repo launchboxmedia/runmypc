@@ -880,7 +880,14 @@ Respond ONLY with JSON:
         await updateStep(supabase, jobId, 'generate-instagram-carousel', 'completed')
       }
     } catch (err) {
-      console.error('Carousel generation failed:', err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.error('Carousel generation failed:', errorMsg, err)
+      // Persist the reason on the step row (text column) so carousel failures are
+      // diagnosable. (output_type has no 'error' enum value — don't insert one.)
+      await supabase.from('job_steps')
+        .update({ error: errorMsg.slice(0, 1000) })
+        .eq('job_id', jobId)
+        .eq('step_key', 'generate-instagram-carousel')
       await updateStep(supabase, jobId, 'generate-instagram-carousel', 'failed')
     }
 
