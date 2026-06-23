@@ -53,19 +53,27 @@ export async function resolveCoverVisual(
     topic: string
     audience?: string | null
     selectedAssetUrl?: string | null
+    onFailure?: (reason: string) => void
   },
   depsOverride?: Partial<CoverVisualDeps>
 ): Promise<{ dataUri: string } | null> {
   const deps = { ...defaults, ...depsOverride }
-  const { resolved, topic, audience, selectedAssetUrl } = input
+  const { resolved, topic, audience, selectedAssetUrl, onFailure } = input
+
+  const fail = (reason: string): null => {
+    console.warn(`[coverVisual] resolveCoverVisual failed: ${reason}`)
+    onFailure?.(reason)
+    return null
+  }
 
   // 1. Selected approved asset wins — no generation, no scoring.
   if (selectedAssetUrl) {
     try {
       const buf = await fetchBuffer(selectedAssetUrl)
       return { dataUri: toDataUri(buf) }
-    } catch {
-      // fall through to generation
+    } catch (err) {
+      // Fall through to generation — log but don't fail hard.
+      console.warn(`[coverVisual] selected asset fetch failed (${err instanceof Error ? err.message : err}), falling through to generation`)
     }
   }
 
@@ -78,17 +86,24 @@ export async function resolveCoverVisual(
     const urls = results
       .filter((r): r is PromiseFulfilledResult<{ url: string }> => r.status === 'fulfilled')
       .map(r => r.value.url)
-    if (urls.length === 0) return null
+
+    if (urls.length === 0) {
+      const reasons = results
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map(r => r.reason instanceof Error ? r.reason.message : String(r.reason))
+      return fail(`all ${COVER_VARIANTS} image generation calls failed: ${reasons.join('; ')}`)
+    }
 
     const buffers = (await Promise.allSettled(urls.map(fetchBuffer)))
       .filter((r): r is PromiseFulfilledResult<Buffer> => r.status === 'fulfilled')
       .map(r => r.value)
-    if (buffers.length === 0) return null
+
+    if (buffers.length === 0) return fail('image URL fetch failed after generation succeeded')
     if (buffers.length === 1) return { dataUri: toDataUri(buffers[0]) }
 
     const best = await deps.pickBestVisual(buffers, { topic, styleId: resolved.style_id })
     return { dataUri: toDataUri(buffers[best] ?? buffers[0]) }
-  } catch {
-    return null
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err))
   }
 }
