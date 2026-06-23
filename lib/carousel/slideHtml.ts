@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { STYLE_LIBRARY } from '@/lib/designSystem/styleLibrary'
 import type { ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
 import type { CarouselBeat } from './types'
+import { buildFontFaceBlock } from './fonts'
 
 const HTML_MODEL = 'claude-haiku-4-5-20251001'
 const COVER_TOKEN = '__COVER_VISUAL__'
@@ -59,7 +60,8 @@ function esc(s: string): string {
 }
 
 // Deterministic fallback slide — valid GSAP composition the render service
-// will always accept. Used when Haiku generates an invalid composition.
+// will always accept. Uses CSS Grid (1080×1350, 4:5) with inline font injection.
+// Replaces the old padding:72px approach with strict grid math.
 export function buildFallbackSlide(
   beat: CarouselBeat,
   resolved: ResolvedDesignSystem
@@ -68,31 +70,100 @@ export function buildFallbackSlide(
   const bg = resolved.background
   const fg = resolved.primary_color
   const accent = resolved.accent
+  const displayFont = style.typography.display_font
+  const bodyFont = style.typography.body_font
 
-  const coverBg = beat.isCover
-    ? `<img id="cover-bg" src="${COVER_TOKEN}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;" />`
+  const fontFaceBlock = buildFontFaceBlock([displayFont, bodyFont])
+  const isSplitCover = beat.isCover && resolved.split_image_cover
+  const isFullBleedCover = beat.isCover && !resolved.split_image_cover
+  const isHero = beat.slideComponent === 'cover' || beat.slideComponent === 'cta'
+
+  // Wrap highlightWord in accent span — safe: both pieces are individually escaped
+  function titleHtml(title: string, highlightWord?: string): string {
+    if (!highlightWord) return esc(title)
+    const idx = title.toLowerCase().indexOf(highlightWord.toLowerCase())
+    if (idx === -1) return esc(title)
+    return (
+      esc(title.slice(0, idx)) +
+      `<span class="highlight">${esc(title.slice(idx, idx + highlightWord.length))}</span>` +
+      esc(title.slice(idx + highlightWord.length))
+    )
+  }
+
+  // Content elements (opacity:0 — GSAP reveals via timeline)
+  const titleClass = isHero ? 'slide-title hero-text' : 'slide-title'
+  const titleEl = `<div id="title" class="${titleClass}" style="opacity:0">${titleHtml(beat.title, beat.highlightWord)}</div>`
+  const subheadEl = beat.subhead
+    ? `<div id="subhead" class="slide-subhead" style="opacity:0">${esc(beat.subhead)}</div>`
     : ''
-  const subhead = beat.subhead
-    ? `<div id="subhead" style="font-family:'${style.typography.body_font}',sans-serif;font-size:38px;color:${fg};opacity:0;margin-top:24px;line-height:1.4;">${esc(beat.subhead)}</div>`
+  const calloutEl = beat.calloutBox
+    ? `<div id="callout" class="slide-callout" style="opacity:0">${esc(beat.calloutBox)}</div>`
     : ''
-  const bullets = beat.bullets?.length
-    ? `<ul id="bullets" style="list-style:none;padding:0;margin-top:32px;opacity:0;">${beat.bullets.map(b => `<li style="font-family:'${style.typography.body_font}',sans-serif;font-size:34px;color:${fg};padding:8px 0;border-bottom:1px solid ${accent}33;">• ${esc(b)}</li>`).join('')}</ul>`
+  const bulletsEl = beat.bullets?.length
+    ? `<ul id="bullets" class="slide-bullets" style="opacity:0">${beat.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
     : ''
-  const checklist = beat.checklist?.length
-    ? `<ul id="checklist" style="list-style:none;padding:0;margin-top:32px;opacity:0;">${beat.checklist.map(c => `<li style="font-family:'${style.typography.body_font}',sans-serif;font-size:34px;color:${fg};padding:8px 0;">✓ ${esc(c)}</li>`).join('')}</ul>`
+  const checklistEl = beat.checklist?.length
+    ? `<ul id="checklist" class="slide-checklist" style="opacity:0">${beat.checklist.map(c => `<li>✓ ${esc(c)}</li>`).join('')}</ul>`
     : ''
-  const callout = beat.calloutBox
-    ? `<div id="callout" style="border-left:6px solid ${accent};padding:20px 28px;margin-top:32px;opacity:0;font-family:'${style.typography.body_font}',sans-serif;font-size:38px;color:${fg};">${esc(beat.calloutBox)}</div>`
+  const proofEl = beat.proofImageUri
+    ? `<div id="proof" class="premium-proof-frame" style="opacity:0"><img src="${esc(beat.proofImageUri)}" alt="" /></div>`
     : ''
-  const anchor = beat.bottomAnchor
-    ? `<div id="anchor" style="position:absolute;bottom:80px;left:72px;right:72px;font-family:'${style.typography.body_font}',sans-serif;font-size:32px;color:${accent};opacity:0;">${esc(beat.bottomAnchor)}</div>`
+  const anchorEl = beat.bottomAnchor
+    ? `<div id="anchor" class="slide-anchor" style="opacity:0">${esc(beat.bottomAnchor)}</div>`
     : ''
 
-  const subheadAnim = beat.subhead ? `tl.fromTo("#subhead",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},0.5);` : ''
-  const calloutAnim = beat.calloutBox ? `tl.fromTo("#callout",{opacity:0,x:-20},{opacity:1,x:0,duration:0.5},0.7);` : ''
-  const listAnim = (beat.bullets || beat.checklist) ? `tl.fromTo("#${beat.bullets ? 'bullets' : 'checklist'}",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},0.8);` : ''
-  const anchorAnim = beat.bottomAnchor ? `tl.fromTo("#anchor",{opacity:0},{opacity:1,duration:0.4},1.4);` : ''
-  const coverAnim = beat.isCover ? `tl.fromTo("#cover-bg",{scale:1.05},{scale:1,duration:${SLIDE_DURATION},ease:"none"},0);` : ''
+  // GSAP animations (REQUIRED — Hyperframes seeks timeline frame-by-frame)
+  const anims = [
+    `tl.fromTo("#title",{opacity:0,y:30},{opacity:1,y:0,duration:0.7},0.1);`,
+    beat.subhead        ? `tl.fromTo("#subhead",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},0.5);`                 : '',
+    beat.calloutBox     ? `tl.fromTo("#callout",{opacity:0,x:-20},{opacity:1,x:0,duration:0.5},0.7);`                : '',
+    beat.bullets?.length ? `tl.fromTo("#bullets",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},0.8);`               : '',
+    beat.checklist?.length ? `tl.fromTo("#checklist",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},0.8);`           : '',
+    beat.proofImageUri  ? `tl.fromTo("#proof",{opacity:0,y:20},{opacity:1,y:0,duration:0.6},0.9);`                  : '',
+    beat.bottomAnchor   ? `tl.fromTo("#anchor",{opacity:0},{opacity:1,duration:0.4},1.4);`                           : '',
+    beat.isCover        ? `tl.fromTo("#cover-bg",{scale:1.05},{scale:1,duration:${SLIDE_DURATION},ease:"none"},0);`  : '',
+    `tl.to("#${COMPOSITION_ID}",{opacity:1,duration:0.01},${SLIDE_DURATION});`,
+  ].filter(Boolean).join('\n  ')
+
+  // HTML structure varies by cover mode
+  let innerHtml: string
+  if (isSplitCover) {
+    // 55% image / 45% text — split-layout takes the full grid
+    innerHtml = `
+<div class="split-layout">
+  <div class="split-image-zone">
+    <img id="cover-bg" src="${COVER_TOKEN}" alt="" />
+  </div>
+  <div class="split-text-zone">
+    ${titleEl}
+    ${subheadEl}
+    ${anchorEl}
+  </div>
+</div>`
+  } else if (isFullBleedCover) {
+    // Full-bleed cover: ::after pseudo-element scrim guarantees text contrast
+    innerHtml = `
+<div class="cover-backdrop-wrap">
+  <img id="cover-bg" src="${COVER_TOKEN}" alt="" />
+</div>
+<div class="cover-text-overlay">
+  ${titleEl}
+  ${subheadEl}
+  ${anchorEl}
+</div>`
+  } else {
+    // Body slide: content in the safe-zone grid cell
+    innerHtml = `
+<div class="slide-content-area">
+  ${titleEl}
+  ${subheadEl}
+  ${calloutEl}
+  ${bulletsEl}
+  ${checklistEl}
+  ${proofEl}
+</div>
+${beat.bottomAnchor ? `<div class="slide-anchor-row">${anchorEl}</div>` : ''}`
+  }
 
   return `<!doctype html>
 <html lang="en">
@@ -101,9 +172,107 @@ export function buildFallbackSlide(
 <meta name="viewport" content="width=1080,height=1350">
 <script src="${GSAP_CDN}"></script>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
-  #${COMPOSITION_ID}{position:relative;width:1080px;height:1350px;background:${bg};overflow:hidden}
+${fontFaceBlock}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
+/* 4:5 CSS Grid — 72px gutters, inner cell 936×1206 */
+#${COMPOSITION_ID}{
+  position:relative;width:1080px;height:1350px;
+  display:grid;
+  grid-template-columns:72px 1fr 72px;
+  grid-template-rows:72px 1fr 72px;
+  background:${bg};overflow:hidden;
+}
+/* ── Split cover (55 / 45) ── */
+.split-layout{
+  grid-column:1/-1;grid-row:1/-1;
+  display:grid;grid-template-rows:55fr 45fr;
+}
+.split-image-zone{
+  grid-row:1;position:relative;overflow:hidden;
+}
+.split-image-zone img{
+  width:100%;height:100%;object-fit:cover;display:block;
+}
+.split-text-zone{
+  grid-row:2;background:${bg};
+  display:flex;flex-direction:column;justify-content:center;
+  padding:56px 72px;gap:20px;
+}
+/* ── Full-bleed cover ── */
+.cover-backdrop-wrap{
+  position:absolute;inset:0;z-index:0;overflow:hidden;
+}
+.cover-backdrop-wrap img{
+  width:100%;height:100%;object-fit:cover;display:block;
+}
+.cover-backdrop-wrap::after{
+  content:'';
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0) 60%);
+  z-index:1;pointer-events:none;
+}
+.cover-text-overlay{
+  position:relative;z-index:2;
+  grid-column:2;grid-row:2;
+  display:flex;flex-direction:column;gap:20px;align-self:end;
+}
+/* ── Body slide ── */
+.slide-content-area{
+  grid-column:2;grid-row:2;
+  display:flex;flex-direction:column;gap:24px;
+}
+.slide-anchor-row{
+  grid-column:2;grid-row:3;
+  display:flex;align-items:center;
+}
+/* ── Typography ── */
+.slide-title{
+  font-family:'${displayFont}',serif;
+  font-size:72px;font-weight:800;
+  color:${fg};line-height:1.1;
+}
+.hero-text{
+  font-size:clamp(70px,9vw,130px);
+  line-height:0.9;
+}
+.highlight{
+  background:${accent}40;
+  padding:0 6px 4px;
+  border-radius:4px;
+}
+.slide-subhead{
+  font-family:'${bodyFont}',sans-serif;
+  font-size:38px;color:${fg};line-height:1.4;
+}
+.slide-bullets,.slide-checklist{list-style:none;padding:0;margin-top:8px;}
+.slide-bullets li,.slide-checklist li{
+  font-family:'${bodyFont}',sans-serif;
+  font-size:34px;color:${fg};
+  padding:8px 0;border-bottom:1px solid ${accent}33;
+}
+.slide-callout{
+  border-left:6px solid ${accent};padding:20px 28px;
+  font-family:'${bodyFont}',sans-serif;font-size:38px;color:${fg};
+}
+.slide-anchor{
+  font-family:'${bodyFont}',sans-serif;font-size:32px;color:${accent};
+}
+/* ── Social proof frame ── */
+.premium-proof-frame{
+  transform:rotate(-1.5deg);
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.45),
+    0 8px 24px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.15);
+  border:1px solid rgba(255,255,255,0.18);
+  border-radius:12px;overflow:hidden;
+  display:block;max-width:100%;margin-top:32px;
+  max-height:480px;
+}
+.premium-proof-frame img{
+  object-fit:contain;width:100%;height:100%;display:block;
+}
 </style>
 </head>
 <body>
@@ -114,22 +283,12 @@ export function buildFallbackSlide(
   data-start="0"
   data-duration="${SLIDE_DURATION}"
   data-root="true">
-  ${coverBg}
-  <div style="position:relative;z-index:1;padding:72px;">
-    <div id="title" style="font-family:'${style.typography.display_font}',serif;font-size:72px;font-weight:800;color:${fg};line-height:1.1;opacity:0;">${esc(beat.title)}</div>
-    ${subhead}${callout}${bullets}${checklist}${anchor}
-  </div>
+  ${innerHtml}
 </div>
 <script>
   window.__timelines = window.__timelines || {};
   var tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
-  tl.fromTo("#title",{opacity:0,y:30},{opacity:1,y:0,duration:0.7},0.1);
-  ${subheadAnim}
-  ${calloutAnim}
-  ${listAnim}
-  ${anchorAnim}
-  ${coverAnim}
-  tl.to("#${COMPOSITION_ID}",{opacity:1,duration:0.01},${SLIDE_DURATION});
+  ${anims}
   window.__timelines["${COMPOSITION_ID}"] = tl;
 </script>
 </body>

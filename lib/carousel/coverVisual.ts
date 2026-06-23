@@ -33,13 +33,20 @@ function toDataUri(buf: Buffer): string {
   return `data:${sniffMediaType(buf)};base64,${buf.toString('base64')}`
 }
 
+const PERSONAL_AUDIENCE_RE = /\b(personal|fitness|wellness|weight|transformation|consumer|d2c|individual|self|body|health|lifestyle|motivation|confidence|diet|mindset)\b/i
+
 function buildPrompt(style: StyleId, topic: string, audience?: string | null): string {
   const d = STYLE_LIBRARY[style]
+  const isPersonal = PERSONAL_AUDIENCE_RE.test(audience || '')
+  const faceModifier = isPersonal
+    ? '(photorealistic, human face visible, emotional expression: 1.3)'
+    : ''
   return [
     `A single high-quality background visual for a social media carousel cover about "${topic}".`,
     audience ? `Audience: ${audience}.` : '',
     `Visual style — ${d.display_name}: ${d.hook_technique}`,
     `Composition: ${d.layout_descriptor}`,
+    isPersonal ? `Priority: ${faceModifier}` : '',
     `ABSOLUTELY NO text, no words, no letters, no numbers, no captions, no logos in the image.`,
     `Leave clean negative space for a headline to be added later. Photographic/illustrative subject only, scroll-stopping, 4:5 portrait framing.`,
   ]

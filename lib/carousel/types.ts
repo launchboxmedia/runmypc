@@ -18,6 +18,13 @@ export type CarouselBeat = {
   checklist?: string[]
   bottomAnchor?: string
   body?: string      // rare; hard cap 2 lines max
+  proofImageUri?: string  // optional proof/testimonial image for body slides
+  slideComponent?: 'cover' | 'narrative' | 'stat_callout' | 'proof' | 'cta'
+  highlightWord?: string  // one power word from hook title; rendered with accent highlight
+  // CTA Manychat automation fields (cta beat only)
+  automationKeyword?: string          // 1–3 words users type to trigger the flow
+  ctaInstagramInstructions?: string   // optimized for IG comment automation
+  ctaTiktokInstructions?: string      // optimized for TikTok DM automation
 }
 
 export type CarouselSlideResult = {
