@@ -785,27 +785,43 @@ Respond ONLY with JSON:
       if (!instagramOutput?.content) {
         await updateStep(supabase, jobId, 'generate-instagram-carousel', 'skipped')
       } else {
-        const contentMatch = instagramOutput.content.match(/\{[\s\S]*\}/)
-        const instParsed = JSON.parse(contentMatch ? contentMatch[0] : instagramOutput.content)
-
         // Helper: fetch a selected asset's bytes as a base64 data-URI (the render
         // lambda has no egress, so images must be embedded, not linked).
+        // Falls back to the public URL if the signed-URL fetch fails — logos
+        // uploaded via sync-logo live at a public path in the job-assets bucket.
         const toDataUri = async (filePath: string): Promise<string | null> => {
-          const { data: signed } = await supabase.storage.from('job-assets').createSignedUrl(filePath, 3600)
-          if (!signed?.signedUrl) return null
+          const { data: signed, error: signError } = await supabase.storage
+            .from('job-assets')
+            .createSignedUrl(filePath, 3600)
+          const primaryUrl = signed?.signedUrl
+          const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/job-assets/${filePath}`
+          const urlToFetch = primaryUrl || publicUrl
+
+          if (!primaryUrl) {
+            console.warn(`[carousel] createSignedUrl failed for ${filePath}: ${signError?.message} — trying public URL`)
+          }
           try {
-            const res = await fetch(signed.signedUrl)
-            if (!res.ok) return null
+            const res = await fetch(urlToFetch)
+            if (!res.ok) {
+              console.warn(`[carousel] toDataUri fetch failed (${res.status}) for path=${filePath}`)
+              return null
+            }
             const buf = Buffer.from(await res.arrayBuffer())
             const mime = res.headers.get('content-type') || 'image/png'
             return `data:${mime};base64,${buf.toString('base64')}`
-          } catch { return null }
+          } catch (err) {
+            console.warn(`[carousel] toDataUri fetch threw for path=${filePath}:`, err instanceof Error ? err.message : err)
+            return null
+          }
         }
 
         // Brand logo (if selected): stamped as a mark on every slide. Excluded
         // from the cover-visual choice — a logo must never become the hero image.
         const logoAsset = selectedAssets.find((a: any) => a.asset_type === 'logo')
         const logoDataUri = logoAsset?.file_path ? await toDataUri(logoAsset.file_path) : null
+        if (logoAsset?.file_path && !logoDataUri) {
+          console.warn(`[carousel] logo data-URI is null for job ${jobId} — slides will render without brand mark. Asset path: ${logoAsset.file_path}`)
+        }
 
         // Optional cover visual: first selected approved IMAGE asset that is NOT the logo.
         let selectedAssetUrl: string | null = null
@@ -819,21 +835,37 @@ Respond ONLY with JSON:
           selectedAssetUrl = signed?.signedUrl || null
         }
 
-        // Phase C: design-system carousel — resolve style, plan dynamic slides
-        // (cover=hook first, single CTA last), generate per-slide HTML, render
-        // PNGs via the static render service, quality-gate with retries.
+        // Phase C-1: generate carousel beats from research data (not social copy).
+        // selectedTopics and primaryTopic are in scope from the research step above.
+        const researchContext = selectedTopics
+          .slice(0, 5)
+          .map((t: { title?: string; body?: string }) => [t.title, t.body].filter(Boolean).join(': '))
+          .join('\n')
+
+        const { generateCarouselBeats } = await import('@/lib/carousel/generateCarouselBeats')
+        const beats = await generateCarouselBeats({
+          topic: job.topic,
+          audience: job.target_audience,
+          outcome: job.outcome,
+          researchContext,
+        })
+
+        // Phase C-2: generate per-beat HTML, quality-gate, render animated MP4.
         const { generateCarousel } = await import('@/lib/carousel/generateCarousel')
         const result = await generateCarousel({
           job,
           profile,
-          igPost: {
-            hook: instParsed.hook || primaryTopic,
-            body: instParsed.body || '',
-            cta: instParsed.cta || 'Follow for more',
-          },
+          beats,
           selectedAssetUrl,
-          logoDataUri, // brand mark stamped on every slide
+          logoDataUri,
           resolved: resolvedDesign, // Phase D: reuse the once-resolved system
+          onCoverVisualFailure: async (reason) => {
+            console.warn(`[carousel] cover visual failed for job ${jobId}: ${reason}`)
+            await supabase.from('job_steps')
+              .update({ error: `Cover image generation failed: ${reason}` })
+              .eq('job_id', jobId)
+              .eq('step_key', 'generate-instagram-carousel')
+          },
         })
 
         // Upload all slides. Store storage PATHS (not public URLs) — job-assets
@@ -842,11 +874,11 @@ Respond ONLY with JSON:
         const uploadedUrls: string[] = []
 
         for (let i = 0; i < result.slides.length; i++) {
-          const filename = `${job.user_id}/${jobId}/carousel/slide-${i + 1}.png`
+          const filename = `${job.user_id}/${jobId}/carousel/slide-${i + 1}.mp4`
 
           const { error } = await supabase.storage
             .from('job-assets')
-            .upload(filename, result.slides[i].png, { contentType: 'image/png', upsert: true })
+            .upload(filename, result.slides[i].buffer, { contentType: 'video/mp4', upsert: true })
 
           if (!error) {
             slideStoragePaths.push(filename)
