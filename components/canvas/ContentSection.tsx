@@ -28,6 +28,20 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const [activeTab, setActiveTab] = useState('instagram')
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const [slideSignedUrls, setSlideSignedUrls] = useState<Record<string, string[]>>({})
+  // Inline lightbox for carousel slides — stays on the canvas, no new tab/redirect.
+  const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null)
+
+  // Keyboard controls for the lightbox: Esc closes, ←/→ navigate.
+  useEffect(() => {
+    if (!lightbox) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setLightbox(null)
+      else if (e.key === 'ArrowRight') setLightbox(lb => lb ? { ...lb, index: Math.min(lb.index + 1, lb.urls.length - 1) } : lb)
+      else if (e.key === 'ArrowLeft') setLightbox(lb => lb ? { ...lb, index: Math.max(lb.index - 1, 0) } : lb)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
 
   useEffect(() => {
     async function generateSignedUrls() {
@@ -143,34 +157,46 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
         </div>
       )}
 
-      {/* Instagram Carousel */}
-      {carousel && (slideSignedUrls[carousel.id] || carousel.metadata?.slide_urls) && (
-        <div className="mb-8">
-          <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
-            Instagram Carousel — {carousel.metadata.slide_count} Slides
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {(slideSignedUrls[carousel.id] || carousel.metadata.slide_urls).map((url: string, i: number) => (
-              <div key={i} className="shrink-0">
-                <img
-                  src={url}
-                  alt={`Slide ${i + 1}`}
-                  className="w-24 h-24 object-cover rounded-lg border border-gray-800"
-                />
-                <p className="text-xs text-gray-600 text-center mt-1">
-                  {i === 0 ? 'Hook' : i === carousel.metadata.slide_count - 1 ? 'CTA' : `Slide ${i + 1}`}
-                </p>
-              </div>
-            ))}
+      {/* Instagram Carousel — horizontal gallery; click any slide to open the
+          inline lightbox (no redirect, no new tab). */}
+      {carousel && (() => {
+        const slideUrls: string[] = slideSignedUrls[carousel.id] || carousel.metadata?.slide_urls || []
+        if (slideUrls.length === 0) return null
+        return (
+          <div className="mb-8">
+            <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
+              Carousel — {slideUrls.length} Slides
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+              {slideUrls.map((url, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setLightbox({ urls: slideUrls, index: i })}
+                  className="group shrink-0 text-left focus:outline-none"
+                  aria-label={`Open slide ${i + 1}`}
+                >
+                  <img
+                    src={url}
+                    alt={`Slide ${i + 1}`}
+                    loading="lazy"
+                    className="w-24 aspect-[4/5] object-cover rounded-lg border border-gray-800 transition-all group-hover:border-[#E8622A] group-hover:brightness-110"
+                  />
+                  <p className="text-xs text-gray-600 text-center mt-1">
+                    {i === 0 ? 'Hook' : i === slideUrls.length - 1 ? 'CTA' : `Slide ${i + 1}`}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <a
+              href={`/api/jobs/${outputs[0]?.job_id}/download-carousel`}
+              className="mt-2 inline-block text-xs text-[#E8622A] hover:underline"
+            >
+              Download All Slides (ZIP)
+            </a>
           </div>
-          <a
-            href={`/api/jobs/${outputs[0]?.job_id}/download-carousel`}
-            className="mt-2 inline-block text-xs text-[#E8622A] hover:underline"
-          >
-            Download All Slides (ZIP)
-          </a>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Creatives — only standalone static creatives (YouTube/LinkedIn/Facebook),
           which are v1-gated off. Instagram/TikTok statics were removed (the carousel
@@ -351,6 +377,59 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
           )}
         </div>
       </div>
+
+      {/* Inline carousel lightbox — overlays the canvas; click the X or the
+          backdrop to close. No redirect, no new tab. */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            aria-label="Close"
+            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-[#E8622A] text-white text-xl font-bold transition-colors"
+          >
+            ✕
+          </button>
+
+          {lightbox.index > 0 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setLightbox(lb => lb ? { ...lb, index: lb.index - 1 } : lb) }}
+              aria-label="Previous slide"
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-[#E8622A] text-white text-2xl transition-colors"
+            >
+              ‹
+            </button>
+          )}
+
+          <img
+            src={lightbox.urls[lightbox.index]}
+            alt={`Slide ${lightbox.index + 1}`}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[88vh] max-w-[92vw] w-auto object-contain rounded-xl border border-gray-800 shadow-2xl"
+          />
+
+          {lightbox.index < lightbox.urls.length - 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setLightbox(lb => lb ? { ...lb, index: lb.index + 1 } : lb) }}
+              aria-label="Next slide"
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-[#E8622A] text-white text-2xl transition-colors"
+            >
+              ›
+            </button>
+          )}
+
+          <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-xs text-gray-400 tracking-widest uppercase">
+            {lightbox.index + 1} / {lightbox.urls.length}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

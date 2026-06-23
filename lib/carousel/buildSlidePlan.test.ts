@@ -15,14 +15,25 @@ describe('buildSlidePlan', () => {
     expect(plan.slice(1, -1)).toHaveLength(5)
   })
 
-  it('long body (8 lines) → clamped to 7 total (5 middle)', () => {
+  it('long body (8 lines) → content-driven 10 slides (cover + 8 + cta), not capped at 7', () => {
     const plan = buildSlidePlan({
-      hook: 'H',
-      body: 'a\nb\nc\nd\ne\nf\ng\nh',
-      cta: 'C',
+      hook: 'Hook',
+      body: 'b1\nb2\nb3\nb4\nb5\nb6\nb7\nb8',
+      cta: 'Go now',
     })
-    expect(plan).toHaveLength(7)
-    expect(plan.slice(1, -1)).toHaveLength(5)
+    expect(plan).toHaveLength(10)
+    expect(plan.slice(1, -1)).toHaveLength(8)
+    expect(plan[0].isCover).toBe(true)
+    expect(plan[plan.length - 1].beat).toBe('cta')
+  })
+
+  it('caps total slides at the Instagram max of 20', () => {
+    const body = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+    const plan = buildSlidePlan({ hook: 'H', body, cta: 'C' })
+    expect(plan).toHaveLength(20)
+    expect(plan[0].isCover).toBe(true)
+    expect(plan.slice(1, -1).every(s => s.beat === 'value')).toBe(true)
+    expect(plan[plan.length - 1].beat).toBe('cta')
   })
 
   it('short body (1 line) → total 3 (1 middle), no fabricated copy', () => {
