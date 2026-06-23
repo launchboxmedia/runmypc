@@ -172,15 +172,15 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
         </div>
       )}
 
-      {/* Creatives */}
+      {/* Creatives — only standalone static creatives (YouTube/LinkedIn/Facebook),
+          which are v1-gated off. Instagram/TikTok statics were removed (the carousel
+          replaces them). Hidden entirely when there are none, rather than showing
+          perpetual loading skeletons. */}
+      {creatives.length > 0 && (
       <div className="mb-8">
         <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">Creatives</p>
         <div className="flex gap-3 flex-wrap">
-          {creatives.length === 0 ? (
-            [...Array(3)].map((_, i) => (
-              <div key={i} className="w-28 h-28 bg-gray-900 rounded-lg animate-pulse border border-gray-800"/>
-            ))
-          ) : (
+          {(
             creatives.map(creative => {
               const imageUrl = getOutputUrl(creative)
               return (
@@ -219,6 +219,7 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
           )}
         </div>
       </div>
+      )}
 
       {/* Videos */}
       {videos.length > 0 && (

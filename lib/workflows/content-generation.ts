@@ -641,27 +641,14 @@ Respond ONLY with JSON:
       a.business_fact_id && resultFacts.some(f => f.id === a.business_fact_id)
     )
 
+    // Static creatives. Instagram + TikTok are intentionally ABSENT: the Phase C
+    // design-system carousel fully replaces their static images (removed, not
+    // gated). YouTube / LinkedIn / Facebook remain here but are gated off via
+    // V1_SOCIAL_PLATFORMS (same constant as research/social-copy) — code stays
+    // for v2/v3, just un-gate by adding the platform to the list.
     // Phase D: every creative carries the resolved design system (palette +
     // aesthetic) so the campaign is cohesive with the customer's chosen style.
     const CREATIVE_SPECS = [
-      {
-        platform: 'instagram',
-        label: 'Instagram Square',
-        size: '1024x1024' as const,
-        prompt: `Professional social media creative for Instagram. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. ${designFragment} Clean, bold, scroll-stopping, illustrative (not a fake screenshot).`
-      },
-      {
-        platform: 'instagram_story',
-        label: 'Instagram Story',
-        size: '1024x1536' as const,
-        prompt: `Vertical Instagram story creative. Topic: ${primaryTopic}. Target audience: ${job.target_audience || 'general'}. ${designFragment} Bold vertical format.`
-      },
-      {
-        platform: 'tiktok',
-        label: 'TikTok Thumbnail',
-        size: '1024x1536' as const,
-        prompt: `TikTok video thumbnail. Topic: ${primaryTopic}. Attention-grabbing, bold, energetic. ${designFragment} Vertical format.`
-      },
       {
         platform: 'youtube',
         label: 'YouTube Thumbnail',
@@ -684,7 +671,9 @@ Respond ONLY with JSON:
 
     const { generateImage } = await import('@/lib/atlascloud')
 
-    for (const spec of CREATIVE_SPECS) {
+    // v1 gate: only generate static creatives for platforms in V1_SOCIAL_PLATFORMS.
+    // YouTube/LinkedIn/Facebook are not in the list, so all are skipped in v1.
+    for (const spec of CREATIVE_SPECS.filter(s => V1_SOCIAL_PLATFORMS.includes(s.platform))) {
       try {
         // Check if this is a results-focused creative and we have a real asset
         const isResultCreative = spec.prompt.toLowerCase().includes('result') ||
