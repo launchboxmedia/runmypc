@@ -1,6 +1,6 @@
 // LIVE end-to-end verification (NOT a normal unit test). Only runs when
 // RUN_LIVE=1 and real API keys are present. Calls Atlas image gen + Anthropic
-// vision + the deployed static render service, writes real slide PNGs to
+// vision + the deployed render service, writes real slide MP4s to
 // tmp/carousel-verify/ for visual inspection.
 //
 //   RUN_LIVE=1 npx vitest run lib/carousel/liveVerify.test.ts
@@ -9,6 +9,7 @@ import { config as loadEnv } from 'dotenv'
 import { resolve } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
 import { generateCarousel } from './generateCarousel'
+import { generateCarouselBeats } from './generateCarouselBeats'
 import type { StyleId } from '@/lib/designSystem/styleLibrary'
 
 loadEnv({ path: resolve(process.cwd(), '.env.local') })
@@ -16,12 +17,6 @@ loadEnv({ path: resolve(process.cwd(), '.env.local') })
 const LIVE = process.env.RUN_LIVE === '1'
 
 describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
-  const igPost = {
-    hook: 'Your PC is slower than it should be',
-    body: 'Background apps eat your RAM\nStartup programs pile up over time\nA quick cleanup brings real speed back',
-    cta: 'Run a free scan with RunMyPC',
-  }
-
   // primaryColor:null forces the implied_tone fallback (e.g. premium_editorial's
   // bronze) so we can verify that flagged palette against real composited photo.
   // Inline SVG brand logo (data-URI) to spot-check deterministic logo placement.
@@ -39,6 +34,13 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
   ]
 
   it.each(cases)('renders an on-brand carousel for style $styleId (split=$split logo=$logo)', async ({ styleId, primaryColor, split, assetUrl, logo }) => {
+    const beats = await generateCarouselBeats({
+      topic: 'speed up a slow Windows PC',
+      audience: 'everyday PC owners',
+      outcome: 'a faster computer',
+      researchContext: 'Users want step-by-step guidance on cleaning up startup programs and background apps to get real speed improvements.',
+    })
+
     const result = await generateCarousel({
       job: {
         id: 'verify-job',
@@ -50,7 +52,7 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
         split_image_cover: split ?? false,
       },
       profile: { instagram_handle: 'runmypc' },
-      igPost,
+      beats,
       selectedAssetUrl: assetUrl ?? null,
       logoDataUri: logo ? LOGO_DATA_URI : null,
     })
@@ -62,9 +64,9 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
     const dir = resolve(process.cwd(), 'tmp', 'carousel-verify', `${styleId}${logo ? '-logo' : ''}`)
     mkdirSync(dir, { recursive: true })
     for (const s of result.slides) {
-      const p = resolve(dir, `slide-${s.index + 1}-${s.beat}.png`)
-      writeFileSync(p, s.png)
-      console.log('WROTE', p, `${s.png.length} bytes`)
+      const p = resolve(dir, `slide-${s.index + 1}-${s.beat}.mp4`)
+      writeFileSync(p, s.buffer)
+      console.log('WROTE', p, `${s.buffer.length} bytes`)
     }
   }, 600_000)
 })

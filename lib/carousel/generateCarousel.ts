@@ -1,15 +1,14 @@
-// Phase C orchestrator. Resolves the design system, plans slides from the IG
-// post, resolves a cover visual, then for each slide generates HTML, renders a
-// PNG via the static render service, and runs a quality gate with up to 2 retry
-// regenerations. Returns ordered slide PNGs (cover first, single CTA last).
+// Phase C orchestrator. Takes pre-planned beats (from generateCarouselBeats),
+// resolves the design system, resolves a cover visual, then for each beat
+// generates animated GSAP HTML, quality-gates it with a static PNG check,
+// and renders the final output as an animated MP4 via the Hyperframes service.
 import { resolveDesignSystem, type ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
-import { buildSlidePlan } from './buildSlidePlan'
 import { resolveCoverVisual } from './coverVisual'
-import { generateSlideHtml } from './slideHtml'
-import { renderStaticPng } from './renderClient'
+import { generateSlideHtml, SLIDE_DURATION } from './slideHtml'
+import { renderStaticPng, renderAnimatedSlide } from './renderClient'
 import { checkSlide } from './qualityGate'
 import { mapWithConcurrency } from './concurrency'
-import type { CarouselSlideResult, GenerateCarouselResult, SlidePlan } from './types'
+import type { CarouselBeat, CarouselSlideResult, GenerateCarouselResult } from './types'
 
 const MAX_RETRIES = 2
 // Bounds concurrent Haiku + render calls per carousel against provider rate
@@ -35,16 +34,13 @@ type ProfileInput = {
 export async function generateCarousel(input: {
   job: JobInput
   profile: ProfileInput
-  igPost: { hook: string; body: string; cta: string }
+  beats: CarouselBeat[]
   selectedAssetUrl?: string | null
-  // Optional brand logo (base64 data-URI) stamped on every slide as a mark.
   logoDataUri?: string | null
-  // Phase D: pass a pre-resolved system so the carousel matches the rest of the
-  // campaign (statics/cinematic) and we resolve once per job. Falls back to
-  // resolving here if omitted.
   resolved?: ResolvedDesignSystem
+  onCoverVisualFailure?: (reason: string) => void
 }): Promise<GenerateCarouselResult> {
-  const { job, profile, igPost, selectedAssetUrl } = input
+  const { job, profile, beats, selectedAssetUrl } = input
 
   const resolved = input.resolved ?? await resolveDesignSystem({
     job: {
@@ -60,36 +56,36 @@ export async function generateCarousel(input: {
       : null,
   })
 
-  const plan = buildSlidePlan(igPost)
   const handle = profile?.instagram_handle || undefined
+  const logoDataUri = input.logoDataUri ?? null
 
-  // Kick off the slow cover-visual generation WITHOUT awaiting, so body slides
-  // (which don't need it) render in parallel while the image model works.
+  const coverBeat = beats.find(b => b.isCover)
+  const bodyBeats = beats.filter(b => !b.isCover)
+
+  // Kick off cover visual generation without awaiting so body beats render
+  // in parallel while the image model works.
   const coverVisualPromise = resolveCoverVisual({
     resolved,
     topic: job.topic,
     audience: job.target_audience,
     selectedAssetUrl,
+    onFailure: input.onCoverVisualFailure,
   })
 
-  const coverSlide = plan.find(s => s.isCover)
-  const bodySlides = plan.filter(s => !s.isCover)
-  const logoDataUri = input.logoDataUri ?? null
-
-  // Cover slide: wait only for the cover visual, then render.
-  const coverPromise: Promise<CarouselSlideResult | null> = coverSlide
+  // Cover slide: wait for visual, then render.
+  const coverPromise: Promise<CarouselSlideResult | null> = coverBeat
     ? coverVisualPromise.then(async cover => ({
-        index: coverSlide.index,
-        beat: coverSlide.beat,
-        png: await renderSlideWithGate(coverSlide, resolved, cover?.dataUri ?? null, handle, logoDataUri),
+        index: coverBeat.index,
+        beat: coverBeat.beat,
+        buffer: await renderBeatWithGate(coverBeat, resolved, cover?.dataUri ?? null, handle, logoDataUri),
       }))
     : Promise.resolve(null)
 
-  // Body slides: rendered concurrently (bounded) — independent of the cover visual.
-  const bodyPromise = mapWithConcurrency(bodySlides, SLIDE_CONCURRENCY, async slide => ({
-    index: slide.index,
-    beat: slide.beat,
-    png: await renderSlideWithGate(slide, resolved, null, handle, logoDataUri),
+  // Body beats: render concurrently (bounded) — independent of cover visual.
+  const bodyPromise = mapWithConcurrency(bodyBeats, SLIDE_CONCURRENCY, async beat => ({
+    index: beat.index,
+    beat: beat.beat,
+    buffer: await renderBeatWithGate(beat, resolved, null, handle, logoDataUri),
   }))
 
   const [coverResult, bodyResults] = await Promise.all([coverPromise, bodyPromise])
@@ -99,35 +95,38 @@ export async function generateCarousel(input: {
   return { resolved, slides }
 }
 
-async function renderSlideWithGate(
-  slide: SlidePlan,
-  resolved: GenerateCarouselResult['resolved'],
+async function renderBeatWithGate(
+  beat: CarouselBeat,
+  resolved: ResolvedDesignSystem,
   coverVisualDataUri: string | null,
   handle: string | undefined,
   logoDataUri: string | null
 ): Promise<Buffer> {
   let retryNote: string | undefined
-  let lastPng: Buffer | null = null
+  let lastHtml = ''
 
+  // HTML generation loop: quality-gate each attempt using a static PNG check.
+  // Final attempt skips the gate and always proceeds to animated render.
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const html = await generateSlideHtml({
       resolved,
-      slide,
+      beat,
       handle,
-      coverVisualDataUri: slide.isCover ? coverVisualDataUri : null,
+      coverVisualDataUri: beat.isCover ? coverVisualDataUri : null,
       logoDataUri,
       retryNote,
     })
-    const png = await renderStaticPng(html) // hard render error propagates → Step 4 marks failed
-    lastPng = png
+    lastHtml = html
 
-    // On the final allowed attempt the result is kept regardless, so skip the
-    // (wasted) gate call. Earlier attempts gate and retry on failure.
-    if (attempt === MAX_RETRIES) break
-    const qa = await checkSlide(png, slide)
-    if (qa.pass) break
-    retryNote = qa.issues // regenerate with the failure note
+    if (attempt < MAX_RETRIES) {
+      // Static PNG gate: faster than animated render, compatible with vision model.
+      const gatePng = await renderStaticPng(html)
+      const qa = await checkSlide(gatePng, beat)
+      if (qa.pass) break
+      retryNote = qa.issues
+    }
   }
 
-  return lastPng as Buffer
+  // Final output: animated MP4 via Hyperframes.
+  return renderAnimatedSlide(lastHtml, 1080, 1350, SLIDE_DURATION)
 }
