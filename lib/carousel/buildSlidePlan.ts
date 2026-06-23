@@ -4,8 +4,11 @@
 // total lands in [5,7] without fabricating copy.
 import type { SlidePlan } from './types'
 
-const MIDDLE_MIN = 3 // -> total 5 (cover + 3 + cta) when enough body exists
-const MIDDLE_MAX = 5 // -> total 7
+const MIDDLE_MIN = 3 // documented floor (total 5); we never fabricate copy to reach it
+// Slide count is content-driven, NOT fixed. The only hard ceiling is Instagram's
+// carousel limit (20 slides). More body lines => more slides, up to that cap.
+const MAX_TOTAL_SLIDES = 20
+const MAX_MIDDLE = MAX_TOTAL_SLIDES - 2 // reserve the cover + the single CTA
 const DEFAULT_CTA = 'Follow for more'
 
 // Strip leading bullet glyphs / numbering / whitespace from a body line.
@@ -32,9 +35,10 @@ export function buildSlidePlan(post: { hook: string; body: string; cta: string }
   // Never duplicate the CTA line as a middle beat.
   middlePool = middlePool.filter(t => t.toLowerCase() !== cta.toLowerCase())
 
-  // Clamp: drop extras beyond MIDDLE_MAX; do not fabricate up to MIDDLE_MIN.
-  const middle = middlePool.slice(0, MIDDLE_MAX)
-  void MIDDLE_MIN // documented floor; we never invent copy to reach it
+  // Content-driven count: keep every usable body line as its own slide, capped
+  // only at Instagram's max. We never fabricate copy to reach a minimum.
+  const middle = middlePool.slice(0, MAX_MIDDLE)
+  void MIDDLE_MIN
 
   const slides: SlidePlan[] = []
   slides.push({ index: 0, beat: 'hook', isCover: true, text: coverText })
