@@ -176,12 +176,21 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
                   className="group shrink-0 text-left focus:outline-none"
                   aria-label={`Open slide ${i + 1}`}
                 >
-                  <img
-                    src={url}
-                    alt={`Slide ${i + 1}`}
-                    loading="lazy"
-                    className="w-24 aspect-[4/5] object-cover rounded-lg border border-gray-800 transition-all group-hover:border-[#E8622A] group-hover:brightness-110"
-                  />
+                  {/\.mp4(\?|$)/i.test(url) ? (
+                    <video
+                      src={url}
+                      muted
+                      playsInline
+                      className="w-24 aspect-[4/5] object-cover rounded-lg border border-gray-800 transition-all group-hover:border-[#E8622A] group-hover:brightness-110"
+                    />
+                  ) : (
+                    <img
+                      src={url}
+                      alt={`Slide ${i + 1}`}
+                      loading="lazy"
+                      className="w-24 aspect-[4/5] object-cover rounded-lg border border-gray-800 transition-all group-hover:border-[#E8622A] group-hover:brightness-110"
+                    />
+                  )}
                   <p className="text-xs text-gray-600 text-center mt-1">
                     {i === 0 ? 'Hook' : i === slideUrls.length - 1 ? 'CTA' : `Slide ${i + 1}`}
                   </p>
@@ -407,12 +416,24 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
             </button>
           )}
 
-          <img
-            src={lightbox.urls[lightbox.index]}
-            alt={`Slide ${lightbox.index + 1}`}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[88vh] max-w-[92vw] w-auto object-contain rounded-xl border border-gray-800 shadow-2xl"
-          />
+          {/\.mp4(\?|$)/i.test(lightbox.urls[lightbox.index]) ? (
+            <video
+              src={lightbox.urls[lightbox.index]}
+              autoPlay
+              loop
+              muted
+              playsInline
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[88vh] max-w-[92vw] w-auto object-contain rounded-xl border border-gray-800 shadow-2xl"
+            />
+          ) : (
+            <img
+              src={lightbox.urls[lightbox.index]}
+              alt={`Slide ${lightbox.index + 1}`}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[88vh] max-w-[92vw] w-auto object-contain rounded-xl border border-gray-800 shadow-2xl"
+            />
+          )}
 
           {lightbox.index < lightbox.urls.length - 1 && (
             <button
