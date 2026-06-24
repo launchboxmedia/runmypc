@@ -134,7 +134,7 @@ export async function POST(req: Request) {
 
   const adminSupabase = createAdminClient()
 
-  const { topic, target_audience, outcome, mode, flipbookpro_url, selected_asset_ids, style_id, primary_color, split_image_cover } = await req.json().catch(() => ({}))
+  const { topic, target_audience, outcome, mode, flipbookpro_url, selected_asset_ids, style_id, primary_color, split_image_cover, stance, cta_objective, automation_keyword, proof_asset_url } = await req.json().catch(() => ({}))
   if (!topic?.trim()) return NextResponse.json({ error: 'Topic is required.' }, { status: 400 })
   if (!target_audience?.trim()) return NextResponse.json({ error: 'Target audience is required.' }, { status: 400 })
   if (!outcome?.trim()) return NextResponse.json({ error: 'Outcome is required.' }, { status: 400 })
@@ -177,6 +177,10 @@ export async function POST(req: Request) {
       style_id: style_id ?? null,
       primary_color: primary_color ?? null,
       split_image_cover: split_image_cover === true,
+      stance: stance === 'destroy' ? 'destroy' : 'mimic',
+      cta_objective: cta_objective ?? null,
+      automation_keyword: automation_keyword ?? null,
+      proof_asset_url: proof_asset_url ?? null,
       status: 'queued',
       current_phase: startingPhase
     })

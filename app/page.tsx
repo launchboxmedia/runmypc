@@ -1,9 +1,18 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { StylePicker } from '@/components/StylePicker'
+import { StanceToggle, type Stance } from '@/components/carousel/StanceToggle'
+import { SocialProofUpload } from '@/components/carousel/SocialProofUpload'
 import type { StyleId } from '@/lib/designSystem/styleLibrary'
+
+const CTA_OBJECTIVE_LABELS: Record<string, string> = {
+  audience_growth: 'Audience Growth',
+  drive_traffic:   'Drive Traffic',
+  engagement:      'Engagement',
+  automation:      'Automation (Manychat)',
+}
 
 type BusinessAsset = {
   id: string
@@ -26,6 +35,10 @@ export default function Home() {
   const [overrideStyle, setOverrideStyle] = useState<StyleId | null>(null)
   const [overrideColor, setOverrideColor] = useState<string>('')
   const [overrideSplit, setOverrideSplit] = useState(false)
+  const [stance, setStance] = useState<Stance>('mimic')
+  const [ctaObjective, setCtaObjective] = useState('')
+  const [automationKeyword, setAutomationKeyword] = useState('')
+  const [proofAssetUrl, setProofAssetUrl] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -47,13 +60,14 @@ export default function Home() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('audience_description, audience_outcome')
+        .select('audience_description, audience_outcome, cta_objective')
         .eq('id', user.id)
         .single()
 
       if (profile) {
         if (!targetAudience && profile.audience_description) setTargetAudience(profile.audience_description)
         if (!outcome && profile.audience_outcome) setOutcome(profile.audience_outcome)
+        if (!ctaObjective && profile.cta_objective) setCtaObjective(profile.cta_objective)
       }
 
       // Load approved assets
@@ -97,7 +111,11 @@ export default function Home() {
         selected_asset_ids: selectedAssetIds,
         style_id: overrideStyle ?? undefined,
         primary_color: overrideColor || undefined,
-        split_image_cover: overrideSplit || undefined
+        split_image_cover: overrideSplit || undefined,
+        stance,
+        cta_objective: ctaObjective || undefined,
+        automation_keyword: ctaObjective === 'automation' && automationKeyword ? automationKeyword : undefined,
+        proof_asset_url: proofAssetUrl || undefined,
       })
     })
 
@@ -187,6 +205,57 @@ export default function Home() {
             rows={2}
             className="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-white placeholder-gray-600 focus:outline-none focus:border-[#E8622A] resize-none"
           />
+        </div>
+
+        {/* Stance Toggle */}
+        <div className="mb-6">
+          <StanceToggle value={stance} onChange={setStance} />
+        </div>
+
+        {/* Social Proof Upload */}
+        <div className="mb-6">
+          <SocialProofUpload
+            uploadedUrl={proofAssetUrl}
+            onUpload={url => setProofAssetUrl(url)}
+            onClear={() => setProofAssetUrl(null)}
+          />
+        </div>
+
+        {/* CTA Objective + conditional Automation Keyword */}
+        <div className="mb-6">
+          <label className="block text-xs font-medium text-gray-400 mb-3 uppercase tracking-widest">
+            CTA Objective
+          </label>
+          <select
+            value={ctaObjective}
+            onChange={e => setCtaObjective(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 p-3 text-white focus:outline-none focus:border-[#E8622A]"
+            style={{ borderRadius: 0 }}
+          >
+            <option value="">— select (optional) —</option>
+            {Object.entries(CTA_OBJECTIVE_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+          {ctaObjective === 'automation' && (
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-widest">
+                Automation Keyword <span className="text-gray-600 normal-case">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={automationKeyword}
+                onChange={e => setAutomationKeyword(e.target.value.toUpperCase())}
+                placeholder="e.g. CREDIT FIX"
+                maxLength={32}
+                className="w-full bg-gray-900 border border-gray-700 p-3 text-white placeholder-gray-600 font-mono text-sm focus:outline-none focus:border-[#E8622A]"
+                style={{ borderRadius: 0 }}
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                Users type this word to trigger your Manychat flow.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Asset Selection */}

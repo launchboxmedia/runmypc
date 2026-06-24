@@ -1,7 +1,6 @@
 // Phase 2 Orchestrator: Strategy Engine (OpenAI beats) + Visual Batch Engine
 // (gpt-image-2 via Atlas Cloud) → Phase 1 CSS Grid layout (buildFallbackSlide).
 //
-// NOTE: "gpt-5.4-mini" is not a real OpenAI model. Using gpt-4o-mini instead.
 // gpt-image-2 routes through Atlas Cloud (openai/gpt-image-2/text-to-image) —
 // the existing generateImage() wrapper is already correct; no direct OpenAI
 // SDK needed for images since Atlas Cloud handles the routing + polling.
@@ -23,15 +22,15 @@ function openaiClient(): OpenAI {
 
 // ── Strategy Engine: OpenAI beat generation ────────────────────────────────
 // Wraps generateCarouselBeats with an OpenAI-backed deps object.
-// Default model: gpt-4o-mini (gpt-5.4-mini does not exist in the OpenAI API).
-const STRATEGY_MODEL = 'gpt-4o-mini'
+const STRATEGY_MODEL = 'gpt-5.4-mini'
 
 function buildOpenAIDeps(model = STRATEGY_MODEL): BeatsDeps {
   return {
     async generate(prompt) {
       const client = openaiClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await client.chat.completions.create({
-        model,
+        model: model as any,
         max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
       })
@@ -148,6 +147,7 @@ export type CompileCarouselInput = {
   selectedAssetUrl?: string | null
   logoDataUri?: string | null
   proofAssets?: Record<number, string>  // beat index → real uploaded image URL
+  proofAssetUrl?: string | null         // single uploaded proof URL (auto-mapped to first proof beat)
   onCoverVisualFailure?: (reason: string) => void
 }
 
@@ -166,12 +166,20 @@ async function fetchAsDataUri(url: string): Promise<string> {
 }
 
 export async function compileCarousel(input: CompileCarouselInput): Promise<CompileCarouselResult> {
-  const { beats, resolved, topic, selectedAssetUrl, logoDataUri, proofAssets, onCoverVisualFailure } = input
+  const { beats, resolved, topic, selectedAssetUrl, logoDataUri, proofAssets, proofAssetUrl, onCoverVisualFailure } = input
+
+  // Auto-map proofAssetUrl → proofAssets on the first beat flagged as proof
+  const resolvedProofAssets: Record<number, string> | undefined = (() => {
+    if (!proofAssetUrl) return proofAssets
+    const proofBeat = beats.find(b => b.proofImageUri === 'mock_asset_required')
+    if (!proofBeat) return proofAssets
+    return { ...(proofAssets ?? {}), [proofBeat.index]: proofAssetUrl }
+  })()
 
   // 1. Visual batch + proof substitution in parallel
   const [visualBatch, processedBeats] = await Promise.all([
     runVisualBatch(topic, resolved.style_id),
-    Promise.resolve(substituteProofUris(beats, proofAssets)),
+    Promise.resolve(substituteProofUris(beats, resolvedProofAssets)),
   ])
 
   // 2. Fetch cover + body texture as data-URIs (render lambda has no network egress)

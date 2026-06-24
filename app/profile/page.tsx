@@ -35,6 +35,8 @@ type Profile = {
   telegram_chat_id: string | null
   webhook_url: string | null
   research_instagram_usernames: string | null
+  cta_objective: string | null
+  brand_niche: string | null
 }
 
 const TONE_OPTIONS = [
@@ -176,7 +178,9 @@ export default function ProfilePage() {
         flipbookpro_api_key: profile.flipbookpro_api_key,
         telegram_chat_id: profile.telegram_chat_id,
         webhook_url: profile.webhook_url,
-        research_instagram_usernames: profile.research_instagram_usernames
+        research_instagram_usernames: profile.research_instagram_usernames,
+        cta_objective: profile.cta_objective,
+        brand_niche: profile.brand_niche,
       })
       .eq('id', profile.id)
 
@@ -296,6 +300,31 @@ export default function ProfilePage() {
           </Field>
           <Field label="Brand Colors" hint="Hex codes separated by commas">
             <Input value={profile.brand_colors || ''} onChange={v => update('brand_colors', v)} placeholder="#E8622A, #000000, #FFFFFF" />
+          </Field>
+        </Section>
+
+        {/* Section — Global Defaults */}
+        <Section title="Global Defaults">
+          <Field label="Default CTA Objective" hint="Pre-fills the run screen. Override per job.">
+            <select
+              value={profile.cta_objective || ''}
+              onChange={e => update('cta_objective', e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 p-3 text-white focus:outline-none focus:border-[#E8622A]"
+              style={{ borderRadius: 0 }}
+            >
+              <option value="">— select —</option>
+              <option value="audience_growth">Audience Growth</option>
+              <option value="drive_traffic">Drive Traffic</option>
+              <option value="engagement">Engagement</option>
+              <option value="automation">Automation (Manychat)</option>
+            </select>
+          </Field>
+          <Field label="Brand Niche" hint="Your market category — used to sharpen copy tone and cover visuals">
+            <Input
+              value={profile.brand_niche || ''}
+              onChange={v => update('brand_niche', v)}
+              placeholder="e.g. Credit Repair, Real Estate Investing, E-commerce"
+            />
           </Field>
         </Section>
 

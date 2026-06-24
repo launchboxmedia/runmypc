@@ -860,6 +860,7 @@ Respond ONLY with JSON:
           topic: job.topic,
           selectedAssetUrl,
           logoDataUri,
+          proofAssetUrl: job.proof_asset_url ?? null,
           onCoverVisualFailure: async (reason) => {
             console.warn(`[carousel] cover visual failed for job ${jobId}: ${reason}`)
             await supabase.from('job_steps')

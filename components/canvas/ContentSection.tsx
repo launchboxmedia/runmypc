@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ResearchSection } from './ResearchSection'
+import { CarouselSkeletonCard, ShimmerStyle } from '@/components/carousel/CarouselSkeletonCard'
+import { CarouselExportKit } from '@/components/carousel/CarouselExportKit'
 
 type JobOutput = {
   id: string
@@ -157,11 +159,32 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
         </div>
       )}
 
+      <ShimmerStyle />
+
+      {/* Carousel skeleton — shown while compileCarousel is executing */}
+      {isActive && !carousel && (
+        <div className="mb-8">
+          <p className="text-xs text-gray-600 uppercase tracking-widest mb-3 animate-pulse">
+            Carousel — Building…
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <CarouselSkeletonCard key={i} index={i} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Instagram Carousel — horizontal gallery; click any slide to open the
           inline lightbox (no redirect, no new tab). */}
       {carousel && (() => {
         const slideUrls: string[] = slideSignedUrls[carousel.id] || carousel.metadata?.slide_urls || []
         if (slideUrls.length === 0) return null
+        const ctaMeta = carousel.metadata?.cta_keyword ? {
+          keyword:   carousel.metadata.cta_keyword,
+          ig_index:  carousel.metadata.cta_ig_index,
+          tt_index:  carousel.metadata.cta_tt_index,
+        } : null
         return (
           <div className="mb-8">
             <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
@@ -203,6 +226,8 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
             >
               Download All Slides (ZIP)
             </a>
+            {/* Modular Export Kit — IG/TikTok CTA slides + automation badge */}
+            <CarouselExportKit slideUrls={slideUrls} ctaMeta={ctaMeta} />
           </div>
         )
       })()}
