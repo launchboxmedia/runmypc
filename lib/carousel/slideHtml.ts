@@ -64,7 +64,8 @@ function esc(s: string): string {
 // Replaces the old padding:72px approach with strict grid math.
 export function buildFallbackSlide(
   beat: CarouselBeat,
-  resolved: ResolvedDesignSystem
+  resolved: ResolvedDesignSystem,
+  options?: { bodyTextureUri?: string }
 ): string {
   const style = STYLE_LIBRARY[resolved.style_id]
   const bg = resolved.background
@@ -76,6 +77,8 @@ export function buildFallbackSlide(
   const fontFaceBlock = buildFontFaceBlock([displayFont, bodyFont])
   const isSplitCover = beat.isCover && resolved.split_image_cover
   const isFullBleedCover = beat.isCover && !resolved.split_image_cover
+  const isBodySlide = !beat.isCover
+  const textureUri = isBodySlide ? (options?.bodyTextureUri ?? null) : null
   const isHero = beat.slideComponent === 'cover' || beat.slideComponent === 'cta'
 
   // Wrap highlightWord in accent span — safe: both pieces are individually escaped
@@ -221,7 +224,17 @@ html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
 .slide-content-area{
   grid-column:2;grid-row:2;
   display:flex;flex-direction:column;gap:24px;
+  position:relative;z-index:1;
 }
+${textureUri ? `
+/* ── Editorial body texture ── */
+#${COMPOSITION_ID}::before{
+  content:'';position:absolute;inset:0;
+  background-image:url('${textureUri}');
+  background-size:cover;background-position:center;
+  opacity:0.1;mix-blend-mode:multiply;z-index:0;
+  pointer-events:none;
+}` : ''}
 .slide-anchor-row{
   grid-column:2;grid-row:3;
   display:flex;align-items:center;

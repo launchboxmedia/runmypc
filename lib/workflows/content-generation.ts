@@ -850,15 +850,16 @@ Respond ONLY with JSON:
           researchContext,
         })
 
-        // Phase C-2: generate per-beat HTML, quality-gate, render animated MP4.
-        const { generateCarousel } = await import('@/lib/carousel/generateCarousel')
-        const result = await generateCarousel({
-          job,
-          profile,
+        // Phase C-2: compile slide HTML (CSS Grid engine) → render to MP4.
+        const { compileCarousel } = await import('@/lib/carousel/phaseOrchestrator')
+        const { renderAnimatedSlide } = await import('@/lib/carousel/renderClient')
+
+        const { slideHtml, ctaMeta } = await compileCarousel({
           beats,
+          resolved: resolvedDesign,
+          topic: job.topic,
           selectedAssetUrl,
           logoDataUri,
-          resolved: resolvedDesign, // Phase D: reuse the once-resolved system
           onCoverVisualFailure: async (reason) => {
             console.warn(`[carousel] cover visual failed for job ${jobId}: ${reason}`)
             await supabase.from('job_steps')
@@ -868,17 +869,25 @@ Respond ONLY with JSON:
           },
         })
 
+        // Render each slide HTML → MP4 buffer via Hyperframes (parallel)
+        const slideBuffers = await Promise.all(
+          slideHtml.map(html => renderAnimatedSlide(html))
+        )
+
         // Upload all slides. Store storage PATHS (not public URLs) — job-assets
         // is private; signed URLs get regenerated at read time.
         const slideStoragePaths: string[] = []
         const uploadedUrls: string[] = []
 
-        for (let i = 0; i < result.slides.length; i++) {
-          const filename = `${job.user_id}/${jobId}/carousel/slide-${i + 1}.mp4`
+        for (let i = 0; i < slideBuffers.length; i++) {
+          const ctaSuffix = ctaMeta?.igIndex === i ? 'cta-ig'
+                          : ctaMeta?.ttIndex === i ? 'cta-tt'
+                          : null
+          const filename = `${job.user_id}/${jobId}/carousel/${ctaSuffix ?? `slide-${i + 1}`}.mp4`
 
           const { error } = await supabase.storage
             .from('job-assets')
-            .upload(filename, result.slides[i].buffer, { contentType: 'video/mp4', upsert: true })
+            .upload(filename, slideBuffers[i], { contentType: 'video/mp4', upsert: true })
 
           if (!error) {
             slideStoragePaths.push(filename)
@@ -902,8 +911,11 @@ Respond ONLY with JSON:
               slide_paths: slideStoragePaths,
               slide_urls: uploadedUrls,
               slide_count: slideStoragePaths.length,
-              design_source: result.resolved.source,
-              style_id: result.resolved.style_id,
+              design_source: resolvedDesign.source,
+              style_id: resolvedDesign.style_id,
+              cta_keyword: ctaMeta?.keyword,
+              cta_ig_index: ctaMeta?.igIndex,
+              cta_tt_index: ctaMeta?.ttIndex,
             }
           })
           // Design system already persisted once at the top of the job (Phase D).

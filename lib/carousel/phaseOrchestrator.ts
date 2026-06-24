@@ -9,7 +9,7 @@
 import OpenAI from 'openai'
 import { generateCarouselBeats, type BeatsDeps } from './generateCarouselBeats'
 import { generateImage } from '@/lib/atlascloud'
-import { buildFallbackSlide } from './slideHtml'
+import { buildFallbackSlide, stampLogo } from './slideHtml'
 import { buildIgCtaSlide, buildTtCtaSlide } from './ctaKit'
 import { STYLE_LIBRARY } from '@/lib/designSystem/styleLibrary'
 import type { ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
@@ -105,12 +105,19 @@ const PROOF_PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(`
         text-anchor="middle">proofImageUri resolved at runtime</text>
 </svg>`)}`
 
-function substituteProofUris(beats: CarouselBeat[]): CarouselBeat[] {
-  return beats.map(b =>
-    b.proofImageUri === 'mock_asset_required'
-      ? { ...b, proofImageUri: PROOF_PLACEHOLDER_SVG }
-      : b
-  )
+// proofOverrides: map of beat index → real image URL (from user uploads).
+// Real uploads replace any LLM-generated proofImageUri (including sentinel).
+// Sentinel 'mock_asset_required' without override → placeholder SVG.
+function substituteProofUris(
+  beats: CarouselBeat[],
+  proofOverrides?: Record<number, string>
+): CarouselBeat[] {
+  return beats.map(b => {
+    const override = proofOverrides?.[b.index]
+    if (override) return { ...b, proofImageUri: override }
+    if (b.proofImageUri === 'mock_asset_required') return { ...b, proofImageUri: PROOF_PLACEHOLDER_SVG }
+    return b
+  })
 }
 
 // ── Orchestrator bridge ────────────────────────────────────────────────────
@@ -128,6 +135,86 @@ export type OrchestratorResult = {
   visualBatch: VisualBatchResult
   slideHtml: string[]   // body slides + [n-1]=IG CTA + [n]=TikTok CTA
   ctaMeta?: CtaMeta
+}
+
+// ── Production compiler (replaces generateCarousel) ───────────────────────
+// Takes pre-generated beats + resolved design system → slideHtml[] + ctaMeta.
+// Caller is responsible for rendering each HTML to MP4 via renderAnimatedSlide.
+
+export type CompileCarouselInput = {
+  beats: CarouselBeat[]
+  resolved: ResolvedDesignSystem
+  topic: string
+  selectedAssetUrl?: string | null
+  logoDataUri?: string | null
+  proofAssets?: Record<number, string>  // beat index → real uploaded image URL
+  onCoverVisualFailure?: (reason: string) => void
+}
+
+export type CompileCarouselResult = {
+  slideHtml: string[]
+  ctaMeta?: CtaMeta
+  visualBatch: VisualBatchResult
+}
+
+async function fetchAsDataUri(url: string): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`fetch failed (${res.status}): ${url}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  const ct = res.headers.get('content-type') || 'image/jpeg'
+  return `data:${ct};base64,${buf.toString('base64')}`
+}
+
+export async function compileCarousel(input: CompileCarouselInput): Promise<CompileCarouselResult> {
+  const { beats, resolved, topic, selectedAssetUrl, logoDataUri, proofAssets, onCoverVisualFailure } = input
+
+  // 1. Visual batch + proof substitution in parallel
+  const [visualBatch, processedBeats] = await Promise.all([
+    runVisualBatch(topic, resolved.style_id),
+    Promise.resolve(substituteProofUris(beats, proofAssets)),
+  ])
+
+  // 2. Fetch cover + body texture as data-URIs (render lambda has no network egress)
+  const [coverDataUri, textureDataUri] = await Promise.allSettled([
+    fetchAsDataUri(selectedAssetUrl || visualBatch.coverUrl).catch(async () => {
+      // Fall through to generated cover if selected asset fails
+      return fetchAsDataUri(visualBatch.coverUrl)
+    }),
+    fetchAsDataUri(visualBatch.bodyTextureUrl),
+  ]).then(([cover, tex]) => [
+    cover.status === 'fulfilled' ? cover.value : (onCoverVisualFailure?.('cover fetch failed'), null),
+    tex.status === 'fulfilled' ? tex.value : null,
+  ])
+
+  // 3. Separate CTA from body beats
+  const ctaBeat = processedBeats.find(b => b.beat === 'cta')
+  const bodyBeats = processedBeats.filter(b => b.beat !== 'cta')
+
+  // 4. Compile body beats → HTML (CSS Grid engine)
+  const bodyHtml = bodyBeats.map((beat, i) => {
+    let html = buildFallbackSlide(beat, resolved, {
+      bodyTextureUri: i > 0 && textureDataUri ? textureDataUri : undefined,
+    })
+    if (i === 0 && coverDataUri) {
+      html = html.replaceAll('__COVER_VISUAL__', coverDataUri)
+    }
+    if (logoDataUri) html = stampLogo(html, logoDataUri)
+    return html
+  })
+
+  // 5. Render CTA beat twice — IG + TikTok
+  const igHtml = ctaBeat ? buildIgCtaSlide(ctaBeat) : null
+  const ttHtml = ctaBeat ? buildTtCtaSlide(ctaBeat) : null
+
+  const slideHtml = [...bodyHtml, ...(igHtml ? [igHtml] : []), ...(ttHtml ? [ttHtml] : [])]
+
+  const ctaMeta: CtaMeta | undefined = ctaBeat ? {
+    keyword: ctaBeat.automationKeyword || '',
+    igIndex: bodyHtml.length,
+    ttIndex: bodyHtml.length + 1,
+  } : undefined
+
+  return { slideHtml, ctaMeta, visualBatch }
 }
 
 export async function runOrchestrator(
