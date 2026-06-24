@@ -921,7 +921,9 @@ Respond ONLY with JSON:
             const { renderStaticPng } = await import('@/lib/carousel/renderClient')
             const { runVisionQA } = await import('@/lib/carousel/visionQA')
             const { logRenderFrame } = await import('@/lib/carousel/debugLogger')
-            const coverPng = await renderStaticPng(slideHtml[0])
+            const { injectStaticVisibility } = await import('@/lib/carousel/slideHtml')
+            // GSAP slides start hidden; reveal final state for a legible still.
+            const coverPng = await renderStaticPng(injectStaticVisibility(slideHtml[0]))
             await logRenderFrame(coverPng) // dev-only debug still
             visionVerdict = await runVisionQA(coverPng)
             if (visionVerdict.status === 'FAIL') {

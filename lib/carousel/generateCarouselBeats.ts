@@ -86,7 +86,7 @@ const STRATEGY_CASCADE: { label: string; deps: BeatsDeps }[] = [
   { label: 'gpt-5.5',                deps: makeOpenAIDeps('gpt-5.5') },
   { label: 'gpt-5.4',                deps: makeOpenAIDeps('gpt-5.4') },
   { label: 'gpt-4o (legacy)',        deps: makeOpenAIDeps('gpt-4o') },
-  { label: 'claude-3-5-sonnet (legacy)', deps: makeAnthropicDeps('claude-3-5-sonnet-latest') },
+  { label: 'claude-3-5-sonnet (legacy)', deps: makeAnthropicDeps('claude-3-5-sonnet-20241022') },
   { label: 'claude-haiku (last resort)', deps: makeAnthropicDeps('claude-haiku-4-5-20251001') },
 ]
 
@@ -257,6 +257,7 @@ async function tryGenerate(input: BeatsInput, deps: BeatsDeps, label: string): P
     const validated = validateCarouselBeats(parsed)
     if (!validated) { console.warn(`[generateCarouselBeats] ${label} failed schema validation`); return null }
     const bound = bindAutomationKeyword(validated, input.automationKeyword)
+    console.info(`[generateCarouselBeats] generated via ${label}`)
     await logGenerationPayload(bound) // dev-only; no-op + non-throwing otherwise
     return bound
   } catch (err) {

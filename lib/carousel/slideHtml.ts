@@ -357,6 +357,17 @@ export function stampLogo(html: string, logoDataUri: string | null | undefined):
   return html.slice(0, idx) + mark + html.slice(idx)
 }
 
+// Reveal all GSAP-hidden elements for a representative STILL capture. Animated
+// slides start at opacity:0 (GSAP reveals them over the timeline); a static
+// render at t=0 would be blank. Inject before any renderStaticPng used for QA or
+// debug snapshots so the captured frame shows final content.
+export function injectStaticVisibility(html: string): string {
+  const override = `<style id="static-vis-override">*{opacity:1!important;transform:none!important}#cover-bg{transform:scale(1)!important}</style>`
+  const idx = html.toLowerCase().indexOf('</head>')
+  if (idx === -1) return override + html
+  return html.slice(0, idx) + override + html.slice(idx)
+}
+
 // Pull the HTML document out of any markdown fences / stray prose Haiku adds.
 export function extractHtml(raw: string): string {
   const fenced = raw.match(/```(?:html)?\s*([\s\S]*?)```/i)
