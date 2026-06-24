@@ -54,7 +54,8 @@ function makeOpenAIDeps(model: string): BeatsDeps {
         // Cast bypasses the SDK's static model union for current-gen ids.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         model: model as any,
-        max_tokens: 2000,
+        // gpt-5.x reject max_tokens; max_completion_tokens is accepted by 5.x AND gpt-4o.
+        max_completion_tokens: 2000,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: system },

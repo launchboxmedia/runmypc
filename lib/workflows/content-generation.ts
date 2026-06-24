@@ -916,16 +916,20 @@ Respond ONLY with JSON:
         // Never blocks delivery of an already-rendered carousel — quality gate, not
         // a hard fail.
         let visionVerdict: { status: 'PASS' | 'FAIL'; reason: string } | null = null
-        if (slideHtml[0]) {
+        // QA the IG CTA slide — it carries both headline text AND the automation
+        // keyword, so the QA prompt's legibility + keyword questions both apply.
+        // Falls back to the cover if there is no CTA slide.
+        const qaHtml = slideHtml[ctaMeta?.igIndex ?? 0] ?? slideHtml[0]
+        if (qaHtml) {
           try {
             const { renderStaticPng } = await import('@/lib/carousel/renderClient')
             const { runVisionQA } = await import('@/lib/carousel/visionQA')
             const { logRenderFrame } = await import('@/lib/carousel/debugLogger')
             const { injectStaticVisibility } = await import('@/lib/carousel/slideHtml')
             // GSAP slides start hidden; reveal final state for a legible still.
-            const coverPng = await renderStaticPng(injectStaticVisibility(slideHtml[0]))
-            await logRenderFrame(coverPng) // dev-only debug still
-            visionVerdict = await runVisionQA(coverPng)
+            const qaPng = await renderStaticPng(injectStaticVisibility(qaHtml))
+            await logRenderFrame(qaPng) // dev-only debug still
+            visionVerdict = await runVisionQA(qaPng)
             if (visionVerdict.status === 'FAIL') {
               console.warn(`[carousel] Vision QA FAIL for job ${jobId}: ${visionVerdict.reason}`)
             }
