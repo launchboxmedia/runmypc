@@ -17,6 +17,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Allow the auth callback — it performs the code/OTP exchange that ESTABLISHES
+  // the session, so it must run before any session exists (else infinite bounce).
+  if (pathname.startsWith('/auth/')) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: { headers: request.headers }
   })
