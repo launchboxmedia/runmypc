@@ -81,6 +81,17 @@ export function buildFallbackSlide(
   const textureUri = isBodySlide ? (options?.bodyTextureUri ?? null) : null
   const isHero = beat.slideComponent === 'cover' || beat.slideComponent === 'cta'
 
+  // ── Layout rails ──────────────────────────────────────────────────────────
+  // Luminance scrim: when the beat reads over a busy/dark background, clamp a
+  // dark gradient behind the copy and force white text for guaranteed contrast.
+  const darkContrast = beat.forceContrastMode === 'dark'
+  const textColor = darkContrast ? '#ffffff' : fg
+  const titleShadow = (darkContrast || isHero) ? 'text-shadow:0 2px 14px rgba(0,0,0,0.55);' : ''
+  // Swipe teaser: slides 1–6 (body, non-CTA) get a right-edge bleed + chevron so
+  // they never read as a standalone graphic. Explicit beat flag overrides.
+  const showSwipe = beat.showSwipeIndicator ?? (isBodySlide && beat.beat !== 'cta' && beat.index >= 1 && beat.index <= 6)
+  const pageNum = (beat.paginationIndex ?? beat.index) + 1
+
   // Wrap highlightWord in accent span — safe: both pieces are individually escaped
   function titleHtml(title: string, highlightWord?: string): string {
     if (!highlightWord) return esc(title)
@@ -124,6 +135,7 @@ export function buildFallbackSlide(
     beat.checklist?.length ? `tl.fromTo("#checklist",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},0.8);`           : '',
     beat.proofImageUri  ? `tl.fromTo("#proof",{opacity:0,y:20},{opacity:1,y:0,duration:0.6},0.9);`                  : '',
     beat.bottomAnchor   ? `tl.fromTo("#anchor",{opacity:0},{opacity:1,duration:0.4},1.4);`                           : '',
+    showSwipe           ? `tl.fromTo("#swipe-teaser",{opacity:0,x:24},{opacity:1,x:0,duration:0.5},1.0);tl.to("#swipe-teaser",{x:14,duration:0.7,yoyo:true,repeat:-1,ease:"sine.inOut"},1.6);` : '',
     beat.isCover        ? `tl.fromTo("#cover-bg",{scale:1.05},{scale:1,duration:${SLIDE_DURATION},ease:"none"},0);`  : '',
     `tl.to("#${COMPOSITION_ID}",{opacity:1,duration:0.01},${SLIDE_DURATION});`,
   ].filter(Boolean).join('\n  ')
@@ -157,6 +169,7 @@ export function buildFallbackSlide(
   } else {
     // Body slide: content in the safe-zone grid cell
     innerHtml = `
+${darkContrast ? '<div class="contrast-scrim"></div>' : ''}
 <div class="slide-content-area">
   ${titleEl}
   ${subheadEl}
@@ -165,7 +178,9 @@ export function buildFallbackSlide(
   ${checklistEl}
   ${proofEl}
 </div>
-${beat.bottomAnchor ? `<div class="slide-anchor-row">${anchorEl}</div>` : ''}`
+${beat.bottomAnchor ? `<div class="slide-anchor-row">${anchorEl}</div>` : ''}
+<div class="page-indicator">${pageNum}</div>
+${showSwipe ? '<div id="swipe-teaser" class="swipe-teaser" style="opacity:0"><span class="swipe-chevron">›</span></div>' : ''}`
   }
 
   return `<!doctype html>
@@ -239,11 +254,34 @@ ${textureUri ? `
   grid-column:2;grid-row:3;
   display:flex;align-items:center;
 }
+/* ── Luminance scrim (dark contrast mode) ── */
+.contrast-scrim{
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(0,0,0,0.30) 0%,rgba(0,0,0,0.50) 50%,rgba(0,0,0,0.80) 100%);
+}
+/* ── Swipe teaser (carousel continuity, slides 1–6) ── */
+.swipe-teaser{
+  position:absolute;top:50%;right:0;transform:translateY(-50%);
+  z-index:3;display:flex;align-items:center;justify-content:flex-end;
+  width:128px;height:148px;padding-right:18px;pointer-events:none;
+  background:linear-gradient(to right,rgba(0,0,0,0) 0%,${accent}26 100%);
+  border-top-left-radius:90px;border-bottom-left-radius:90px;
+}
+.swipe-chevron{
+  font-family:sans-serif;font-size:90px;font-weight:700;line-height:1;
+  color:${accent};text-shadow:0 2px 10px rgba(0,0,0,0.5);
+}
+/* ── Page counter ── */
+.page-indicator{
+  position:absolute;top:40px;right:48px;z-index:3;
+  font-family:'${bodyFont}',sans-serif;font-size:30px;font-weight:700;
+  color:${textColor};opacity:0.85;letter-spacing:1px;
+}
 /* ── Typography ── */
 .slide-title{
   font-family:'${displayFont}',serif;
   font-size:72px;font-weight:800;
-  color:${fg};line-height:1.1;
+  color:${textColor};line-height:1.1;${titleShadow}
 }
 .hero-text{
   font-size:clamp(70px,9vw,130px);
@@ -256,17 +294,17 @@ ${textureUri ? `
 }
 .slide-subhead{
   font-family:'${bodyFont}',sans-serif;
-  font-size:38px;color:${fg};line-height:1.4;
+  font-size:38px;color:${textColor};line-height:1.4;
 }
 .slide-bullets,.slide-checklist{list-style:none;padding:0;margin-top:8px;}
 .slide-bullets li,.slide-checklist li{
   font-family:'${bodyFont}',sans-serif;
-  font-size:34px;color:${fg};
+  font-size:34px;color:${textColor};
   padding:8px 0;border-bottom:1px solid ${accent}33;
 }
 .slide-callout{
   border-left:6px solid ${accent};padding:20px 28px;
-  font-family:'${bodyFont}',sans-serif;font-size:38px;color:${fg};
+  font-family:'${bodyFont}',sans-serif;font-size:38px;color:${textColor};
 }
 .slide-anchor{
   font-family:'${bodyFont}',sans-serif;font-size:32px;color:${accent};

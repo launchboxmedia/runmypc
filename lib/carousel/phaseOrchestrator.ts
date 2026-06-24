@@ -5,8 +5,7 @@
 // the existing generateImage() wrapper is already correct; no direct OpenAI
 // SDK needed for images since Atlas Cloud handles the routing + polling.
 
-import OpenAI from 'openai'
-import { generateCarouselBeats, type BeatsDeps } from './generateCarouselBeats'
+import { generateCarouselBeats } from './generateCarouselBeats'
 import { generateImage } from '@/lib/atlascloud'
 import { buildFallbackSlide, stampLogo } from './slideHtml'
 import { buildIgCtaSlide, buildTtCtaSlide } from './ctaKit'
@@ -14,40 +13,24 @@ import { STYLE_LIBRARY } from '@/lib/designSystem/styleLibrary'
 import type { ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
 import type { CarouselBeat } from './types'
 
-// ── OpenAI client ──────────────────────────────────────────────────────────
-
-function openaiClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-}
-
-// ── Strategy Engine: OpenAI beat generation ────────────────────────────────
-// Wraps generateCarouselBeats with an OpenAI-backed deps object.
-const STRATEGY_MODEL = 'gpt-5.4-mini'
-
-function buildOpenAIDeps(model = STRATEGY_MODEL): BeatsDeps {
-  return {
-    async generate(prompt) {
-      const client = openaiClient()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const res = await client.chat.completions.create({
-        model: model as any,
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }],
-      })
-      return res.choices[0]?.message.content ?? ''
-    },
-  }
-}
-
+// ── Strategy Engine: beat generation ───────────────────────────────────────
+// generateCarouselBeats now owns its own model strategy (gpt-5.4-mini primary,
+// Anthropic fallback), so this is a thin pass-through retained for the mock/test
+// runners. Production calls generateCarouselBeats directly from the workflow.
 export async function runStrategyEngine(
   topic: string,
   audience?: string,
   outcome?: string
 ): Promise<CarouselBeat[]> {
-  return generateCarouselBeats(
-    { topic, audience, outcome },
-    buildOpenAIDeps()
-  )
+  return generateCarouselBeats({
+    topic,
+    audience,
+    outcome,
+    researchContext: null,
+    stance: null,
+    ctaObjective: null,
+    automationKeyword: null,
+  })
 }
 
 // ── Visual Batch Engine: Promise.all cover + body texture ──────────────────

@@ -848,7 +848,19 @@ Respond ONLY with JSON:
           audience: job.target_audience,
           outcome: job.outcome,
           researchContext,
+          // S422 fix: forward the user's strategy direction so beats actually
+          // reflect it (was stored in the job DB but dropped before this call).
+          stance: job.stance ?? null,
+          ctaObjective: job.cta_objective ?? null,
+          automationKeyword: job.automation_keyword ?? null,
         })
+
+        // Pre-render semantic gatekeeper: warn on hooks that risk container
+        // overflow (does not block — informs the next iteration / debugging).
+        const { checkHookOverflow } = await import('@/lib/carousel/layoutGuards')
+        for (const w of checkHookOverflow(beats)) {
+          console.warn(`[carousel] Layout Overflow Warning (job ${jobId}): slide ${w.index} (${w.beat}) hook is ${w.chars} chars (>90) — "${w.title.slice(0, 60)}…"`)
+        }
 
         // Phase C-2: compile slide HTML (CSS Grid engine) → render to MP4.
         const { compileCarousel } = await import('@/lib/carousel/phaseOrchestrator')
@@ -899,6 +911,27 @@ Respond ONLY with JSON:
           }
         }
 
+        // Post-render multimodal QA (runtime failsafe) on the cover frame. Renders
+        // a static PNG of the same slide HTML, runs vision QA, records the verdict.
+        // Never blocks delivery of an already-rendered carousel — quality gate, not
+        // a hard fail.
+        let visionVerdict: { status: 'PASS' | 'FAIL'; reason: string } | null = null
+        if (slideHtml[0]) {
+          try {
+            const { renderStaticPng } = await import('@/lib/carousel/renderClient')
+            const { runVisionQA } = await import('@/lib/carousel/visionQA')
+            const { logRenderFrame } = await import('@/lib/carousel/debugLogger')
+            const coverPng = await renderStaticPng(slideHtml[0])
+            await logRenderFrame(coverPng) // dev-only debug still
+            visionVerdict = await runVisionQA(coverPng)
+            if (visionVerdict.status === 'FAIL') {
+              console.warn(`[carousel] Vision QA FAIL for job ${jobId}: ${visionVerdict.reason}`)
+            }
+          } catch (qaErr) {
+            console.warn(`[carousel] Vision QA step skipped for job ${jobId}:`, qaErr instanceof Error ? qaErr.message : qaErr)
+          }
+        }
+
         if (slideStoragePaths.length > 0) {
           await supabase.from('job_outputs').insert({
             job_id: jobId,
@@ -917,6 +950,11 @@ Respond ONLY with JSON:
               cta_keyword: ctaMeta?.keyword,
               cta_ig_index: ctaMeta?.igIndex,
               cta_tt_index: ctaMeta?.ttIndex,
+              vision_qa: visionVerdict,
+              // Fail open on delivery, fail loud on UI: a FAILED QA never blocks
+              // the asset, it raises a review flag the dashboard surfaces.
+              review_required: visionVerdict?.status === 'FAIL',
+              review_reason: visionVerdict?.status === 'FAIL' ? visionVerdict.reason : null,
             }
           })
           // Design system already persisted once at the top of the job (Phase D).

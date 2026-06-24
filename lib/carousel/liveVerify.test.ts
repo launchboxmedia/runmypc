@@ -39,6 +39,9 @@ describe.skipIf(!LIVE)('generateCarousel (LIVE)', () => {
       audience: 'everyday PC owners',
       outcome: 'a faster computer',
       researchContext: 'Users want step-by-step guidance on cleaning up startup programs and background apps to get real speed improvements.',
+      stance: 'mimic',
+      ctaObjective: 'automation',
+      automationKeyword: 'SPEEDUP',
     })
 
     const result = await generateCarousel({

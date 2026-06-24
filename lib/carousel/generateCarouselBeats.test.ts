@@ -1,11 +1,21 @@
 import { describe, it, expect, vi } from 'vitest'
-import { generateCarouselBeats, parseBeatResponse, type BeatsInput } from './generateCarouselBeats'
+import {
+  generateCarouselBeats,
+  parseBeatResponse,
+  bindAutomationKeyword,
+  buildSystemPrompt,
+  buildUserPrompt,
+  type BeatsInput,
+} from './generateCarouselBeats'
 
 const SAMPLE_INPUT: BeatsInput = {
   topic: 'credit repair',
   audience: 'People with low credit scores who want to buy a house',
   outcome: 'Clean credit profile and transparent process',
   researchContext: 'Reddit posts show people frustrated by collections, errors on reports, want step-by-step guidance',
+  stance: 'destroy',
+  ctaObjective: 'automation',
+  automationKeyword: 'RIZE',
 }
 
 const VALID_BEATS_JSON = JSON.stringify({
@@ -96,5 +106,58 @@ describe('generateCarouselBeats', () => {
     const mockGenerate = vi.fn().mockRejectedValue(new Error('API error'))
     const beats = await generateCarouselBeats(SAMPLE_INPUT, { generate: mockGenerate })
     expect(beats[0].beat).toBe('hook')
+  })
+
+  it('binds the user automation keyword onto the CTA, overriding the model', async () => {
+    // Model invents "CREDIT AUDIT" — the S422 bug. Binding must override it.
+    const mockGenerate = vi.fn().mockResolvedValue(JSON.stringify({
+      slides: [
+        { beat: 'hook', title: 'Your Credit Report Is Lying to You' },
+        { beat: 'cta', title: 'Start Today', automationKeyword: 'CREDIT AUDIT' },
+      ],
+    }))
+    const beats = await generateCarouselBeats(SAMPLE_INPUT, { generate: mockGenerate })
+    const cta = beats.find(b => b.beat === 'cta')!
+    expect(cta.automationKeyword).toBe('RIZE')
+  })
+
+  it('binds the keyword onto the generic fallback beats too', async () => {
+    const mockGenerate = vi.fn().mockResolvedValue('garbage')
+    const beats = await generateCarouselBeats(SAMPLE_INPUT, { generate: mockGenerate })
+    expect(beats.find(b => b.beat === 'cta')!.automationKeyword).toBe('RIZE')
+  })
+})
+
+describe('bindAutomationKeyword', () => {
+  it('overrides only the cta beat and leaves others untouched', () => {
+    const beats = parseBeatResponse(VALID_BEATS_JSON)!
+    const bound = bindAutomationKeyword(beats, 'RIZE')
+    expect(bound.find(b => b.beat === 'cta')!.automationKeyword).toBe('RIZE')
+    expect(bound.find(b => b.beat === 'hook')!.automationKeyword).toBeUndefined()
+  })
+
+  it('is a no-op when keyword is null/blank', () => {
+    const beats = parseBeatResponse(VALID_BEATS_JSON)!
+    expect(bindAutomationKeyword(beats, null)).toEqual(beats)
+    expect(bindAutomationKeyword(beats, '   ')).toEqual(beats)
+  })
+})
+
+describe('prompt construction', () => {
+  it('enforces the destroy stance in the system prompt', () => {
+    const sys = buildSystemPrompt({ ...SAMPLE_INPUT, stance: 'destroy' })
+    expect(sys).toMatch(/DESTROY/)
+    expect(sys).toMatch(/AGAINST the status quo/i)
+  })
+
+  it('uses the mimic stance when stance is mimic', () => {
+    const sys = buildSystemPrompt({ ...SAMPLE_INPUT, stance: 'mimic' })
+    expect(sys).toMatch(/MIMIC/)
+  })
+
+  it('binds the exact keyword and cta objective in the user prompt', () => {
+    const user = buildUserPrompt({ ...SAMPLE_INPUT, automationKeyword: 'RIZE', ctaObjective: 'automation' })
+    expect(user).toMatch(/EXACTLY "RIZE"/)
+    expect(user).toMatch(/CTA OBJECTIVE: "automation"/)
   })
 })

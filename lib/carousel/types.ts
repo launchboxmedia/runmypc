@@ -25,7 +25,16 @@ export type CarouselBeat = {
   automationKeyword?: string          // 1–3 words users type to trigger the flow
   ctaInstagramInstructions?: string   // optimized for IG comment automation
   ctaTiktokInstructions?: string      // optimized for TikTok DM automation
+  // ── Layout directives (drive deterministic render rails) ──
+  visualFocusIntent?: string                       // what the eye should land on
+  forceContrastMode?: 'light' | 'dark' | 'auto'    // dark → scrim + white text
+  showSwipeIndicator?: boolean                     // render right-edge swipe teaser
+  paginationIndex?: number                         // slide number for the page counter
 }
+
+// Competitive positioning stance forwarded from the job. 'destroy' = aggressive
+// anti-competitor; 'mimic' = model the proven winners.
+export type CarouselStance = 'destroy' | 'mimic'
 
 export type CarouselSlideResult = {
   index: number

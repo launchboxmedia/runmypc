@@ -32,6 +32,19 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
   const [slideSignedUrls, setSlideSignedUrls] = useState<Record<string, string[]>>({})
   // Inline lightbox for carousel slides — stays on the canvas, no new tab/redirect.
   const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null)
+  // Vision-QA review flag: locally dismissed outputs + regenerate-in-flight state.
+  const [reviewDismissed, setReviewDismissed] = useState<Record<string, boolean>>({})
+  const [regenerating, setRegenerating] = useState(false)
+
+  async function dismissReview(outputId: string) {
+    setReviewDismissed(d => ({ ...d, [outputId]: true })) // optimistic
+    try { await fetch(`/api/job-outputs/${outputId}/dismiss-review`, { method: 'POST' }) } catch { /* UI flag already cleared */ }
+  }
+  async function regenerateCarousel(jobId?: string) {
+    if (!jobId) return
+    setRegenerating(true)
+    try { await fetch(`/api/jobs/${jobId}/execute`, { method: 'POST' }) } catch { setRegenerating(false) }
+  }
 
   // Keyboard controls for the lightbox: Esc closes, ←/→ navigate.
   useEffect(() => {
@@ -185,8 +198,34 @@ export function ContentSection({ outputs, isActive, isRefined }: Props) {
           ig_index:  carousel.metadata.cta_ig_index,
           tt_index:  carousel.metadata.cta_tt_index,
         } : null
+        const needsReview = Boolean(carousel.metadata?.review_required) && !reviewDismissed[carousel.id]
+        const reviewReason: string = carousel.metadata?.review_reason || 'Visual QA flagged this asset'
         return (
           <div className="mb-8">
+            {/* Fail loud: amber quality-flag badge when vision QA marked this asset
+                for review. Asset is still delivered (fail open on delivery). */}
+            {needsReview && (
+              <div className="mb-4 border-2 border-amber-500 bg-amber-500/10 px-4 py-3 rounded-lg">
+                <p className="text-sm font-bold text-amber-400">⚠️ Quality Flag: {reviewReason}</p>
+                <div className="flex gap-3 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => regenerateCarousel(outputs[0]?.job_id)}
+                    disabled={regenerating}
+                    className="px-4 py-2 text-xs font-black uppercase tracking-widest border border-amber-500 text-amber-400 hover:bg-amber-500 hover:text-black transition-all disabled:opacity-50"
+                  >
+                    {regenerating ? 'Regenerating…' : 'Regenerate Asset'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dismissReview(carousel.id)}
+                    className="px-4 py-2 text-xs font-black uppercase tracking-widest border border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white transition-all"
+                  >
+                    Dismiss Warning
+                  </button>
+                </div>
+              </div>
+            )}
             <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">
               Carousel — {slideUrls.length} Slides
             </p>
