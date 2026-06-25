@@ -53,3 +53,11 @@ tmp/
 
 # local carousel debug interception (agent/dev inspection only)
 .debug_logs/
+
+# playwright MCP artifacts + test stills
+.playwright-mcp/
+*-test.png
+cta-ig.png
+cta-tt.png
+login-page*.png
+p2-slide-*.png
