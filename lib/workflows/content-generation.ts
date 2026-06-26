@@ -864,7 +864,8 @@ Respond ONLY with JSON:
 
         // Phase C-2: compile slide HTML (CSS Grid engine) → render to MP4.
         const { compileCarousel } = await import('@/lib/carousel/phaseOrchestrator')
-        const { renderAnimatedSlide } = await import('@/lib/carousel/renderClient')
+        const { renderAnimatedSlide, renderStaticPng } = await import('@/lib/carousel/renderClient')
+        const { injectStaticVisibility } = await import('@/lib/carousel/slideHtml')
 
         const { slideHtml, ctaMeta } = await compileCarousel({
           beats,
@@ -882,9 +883,17 @@ Respond ONLY with JSON:
           },
         })
 
-        // Render each slide HTML → MP4 buffer via Hyperframes (parallel)
-        const slideBuffers = await Promise.all(
-          slideHtml.map(html => renderAnimatedSlide(html))
+        // Render each slide: try animated MP4, fall back to static PNG if Hyperframes fails.
+        type SlideAsset = { buffer: Buffer; ext: 'mp4' | 'png'; mime: string }
+        const slideAssets: SlideAsset[] = await Promise.all(
+          slideHtml.map(async (html): Promise<SlideAsset> => {
+            try {
+              return { buffer: await renderAnimatedSlide(html), ext: 'mp4', mime: 'video/mp4' }
+            } catch (e) {
+              console.warn(`[carousel] animated render failed, falling back to PNG:`, e instanceof Error ? e.message : e)
+              return { buffer: await renderStaticPng(injectStaticVisibility(html)), ext: 'png', mime: 'image/png' }
+            }
+          })
         )
 
         // Upload all slides. Store storage PATHS (not public URLs) — job-assets
@@ -892,15 +901,16 @@ Respond ONLY with JSON:
         const slideStoragePaths: string[] = []
         const uploadedUrls: string[] = []
 
-        for (let i = 0; i < slideBuffers.length; i++) {
+        for (let i = 0; i < slideAssets.length; i++) {
+          const { buffer, ext, mime } = slideAssets[i]
           const ctaSuffix = ctaMeta?.igIndex === i ? 'cta-ig'
                           : ctaMeta?.ttIndex === i ? 'cta-tt'
                           : null
-          const filename = `${job.user_id}/${jobId}/carousel/${ctaSuffix ?? `slide-${i + 1}`}.mp4`
+          const filename = `${job.user_id}/${jobId}/carousel/${ctaSuffix ?? `slide-${i + 1}`}.${ext}`
 
           const { error } = await supabase.storage
             .from('job-assets')
-            .upload(filename, slideBuffers[i], { contentType: 'video/mp4', upsert: true })
+            .upload(filename, buffer, { contentType: mime, upsert: true })
 
           if (!error) {
             slideStoragePaths.push(filename)
