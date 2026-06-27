@@ -57,10 +57,10 @@ export type ComposeCoverInput = {
   resolved: ResolvedDesignSystem
   headline: TypographyToken[]
   assets: EditorialAssets
-  // Calibration knob: the vertical band (% of 1350px) where the headline reads
-  // IN FRONT of the subject. Designers will want to nudge this per style — keep
-  // it a parameter, never a magic constant. Default derives from the subject's
-  // bounding box (the band the figure actually occupies).
+  // The vertical band (% of 1350px) where the headline reads IN FRONT of the
+  // subject. Resolved UPSTREAM by coverResolver.resolveOverlapBand from the
+  // subject's bbox — the painter does NOT compute geometry. If omitted, the
+  // painter falls back to a blind 55% constant (no bbox math here).
   overlapBand?: { topPct: number; bottomPct: number }
   handle?: string
 }
@@ -87,17 +87,8 @@ function headlineHtml(tokens: TypographyToken[]): string {
     .join('')
 }
 
-// Default overlap band from the subject bbox. ONLY the lower slice of the figure
-// carries type in front — the rest of the figure occludes the headline, which is
-// the whole point (type-behind-subject). Setting the band to the figure's full
-// span would paint type in front everywhere the figure is and erase the behind
-// effect. Bias to the bottom ~20% of the subject.
-function defaultBand(subject: SubjectAsset | null): { topPct: number; bottomPct: number } {
-  if (!subject) return { topPct: 55, bottomPct: 100 }
-  const lowerSlice = subject.bbox.y + subject.bbox.h * 0.78
-  const topPct = Math.max(0, Math.min(92, Math.round((lowerSlice / 1350) * 100)))
-  return { topPct, bottomPct: 100 }
-}
+// overlap-band geometry now lives in coverResolver.resolveOverlapBand
+// (the painter owns no bbox math — it just paints the band it's given)
 
 export function composeCover(input: ComposeCoverInput): string {
   const { resolved, headline, assets, handle } = input
@@ -111,7 +102,7 @@ export function composeCover(input: ComposeCoverInput): string {
 
   const hasBg = Boolean(assets.background)
   const hasSubject = Boolean(assets.subject)
-  const band = input.overlapBand ?? defaultBand(assets.subject)
+  const band = input.overlapBand ?? { topPct: 55, bottomPct: 100 }
   const insetTop = Math.max(0, Math.min(100, band.topPct))
   const insetBottom = Math.max(0, Math.min(100, 100 - band.bottomPct))
 
