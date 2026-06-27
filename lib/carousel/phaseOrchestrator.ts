@@ -202,12 +202,16 @@ export async function compileCarousel(input: CompileCarouselInput, deps: Compile
   // back; otherwise fall through to the legacy buildFallbackSlide cover (fail-open).
   // ponytail: legacy cover image from runVisualBatch is wasted when the editorial
   // path wins (~$0.04); split runVisualBatch into texture-only + legacy-cover if cost matters.
+  // Locate the cover beat once; find + inject must agree on the same index
+  // (hardcoding 0 would mis-slot if beat order ever changes).
+  const coverBeatIndex = bodyBeats.findIndex(b => b.isCover)
   let editorialCoverHtml: string | null = null
-  const coverBeat = bodyBeats.find(b => b.isCover)
-  if (coverBeat) {
-    const plan = planCover(coverBeat, resolved, { topic, audience, handle: handle ?? undefined })
-    if (plan) {
-      try {
+  if (coverBeatIndex !== -1) {
+    // Whole block guarded: ANY failure (planCover, provider, compose) falls open
+    // to the legacy cover rather than blocking the carousel.
+    try {
+      const plan = planCover(bodyBeats[coverBeatIndex], resolved, { topic, audience, handle: handle ?? undefined })
+      if (plan) {
         const assets = await deps.provideEditorialAssets({ subjectPrompt: plan.subjectPrompt, bgPrompt: plan.bgPrompt })
         if (assets.subject) {
           let html = composeCover({ resolved, headline: plan.headline, assets, overlapBand: plan.overlapBand, handle: plan.handle })
@@ -216,19 +220,20 @@ export async function compileCarousel(input: CompileCarouselInput, deps: Compile
         } else {
           onCoverVisualFailure?.('editorial subject cutout unavailable — using legacy cover')
         }
-      } catch (e) {
-        onCoverVisualFailure?.(`editorial cover failed: ${e instanceof Error ? e.message : e}`)
       }
+    } catch (e) {
+      onCoverVisualFailure?.(`editorial cover failed: ${e instanceof Error ? e.message : e}`)
     }
   }
 
   // 5. Compile body beats → HTML; the cover slot uses the editorial cover when present
   const bodyHtml = bodyBeats.map((beat, i) => {
-    if (i === 0 && editorialCoverHtml) return editorialCoverHtml
+    const isCoverSlot = i === coverBeatIndex
+    if (isCoverSlot && editorialCoverHtml) return editorialCoverHtml
     let html = buildFallbackSlide(beat, resolved, {
-      bodyTextureUri: i > 0 && textureDataUri ? textureDataUri : undefined,
+      bodyTextureUri: !isCoverSlot && textureDataUri ? textureDataUri : undefined,
     })
-    if (i === 0 && coverDataUri) {
+    if (isCoverSlot && coverDataUri) {
       html = html.replaceAll('__COVER_VISUAL__', coverDataUri)
     }
     if (logoDataUri) html = stampLogo(html, logoDataUri)

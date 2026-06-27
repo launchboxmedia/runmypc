@@ -46,6 +46,17 @@ describe('compileCarousel editorial cover branch', () => {
     )
     expect(res.slideHtml[0]).not.toContain('id="layer-subject"')
     expect(res.slideHtml[0]).toContain('id="slide"')
+    expect(res.slideHtml[0]).toContain('data:image/png;base64,LEGACY')
+  })
+
+  it('falls back to legacy (fail-open) when provideEditorialAssets throws', async () => {
+    const res = await compileCarousel(
+      { beats, resolved: RESOLVED, topic: 'carousels', audience: 'creators', handle: 'ravendesigns' },
+      { ...baseDeps, provideEditorialAssets: async () => { throw new Error('network') } }
+    )
+    expect(res.slideHtml[0]).not.toContain('id="layer-subject"')
+    expect(res.slideHtml[0]).toContain('id="slide"')
+    expect(res.slideHtml[0]).toContain('data:image/png;base64,LEGACY')
   })
 
   it('falls back to legacy for styles without a Hero archetype', async () => {
