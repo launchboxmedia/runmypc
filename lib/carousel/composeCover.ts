@@ -47,7 +47,7 @@ export type SubjectAsset = {
   hasAlpha: boolean
   bbox: { x: number; y: number; w: number; h: number } // px in the 1080×1350 frame
 }
-export type EditorialAssetsLite = {
+export type EditorialAssets = {
   background: string | null
   subject: SubjectAsset | null
   accents?: string[]
@@ -56,7 +56,7 @@ export type EditorialAssetsLite = {
 export type ComposeCoverInput = {
   resolved: ResolvedDesignSystem
   headline: TypographyToken[]
-  assets: EditorialAssetsLite
+  assets: EditorialAssets
   // Calibration knob: the vertical band (% of 1350px) where the headline reads
   // IN FRONT of the subject. Designers will want to nudge this per style — keep
   // it a parameter, never a magic constant. Default derives from the subject's
