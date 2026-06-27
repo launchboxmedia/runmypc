@@ -871,6 +871,8 @@ Respond ONLY with JSON:
           beats,
           resolved: resolvedDesign,
           topic: job.topic,
+          audience: job.target_audience,
+          handle: profile?.instagram_handle ?? null,
           selectedAssetUrl,
           logoDataUri,
           proofAssetUrl: job.proof_asset_url ?? null,

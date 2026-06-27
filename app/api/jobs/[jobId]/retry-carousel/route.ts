@@ -107,6 +107,8 @@ export async function POST(
 
       const { slideHtml, ctaMeta } = await compileCarousel({
         beats, resolved: resolvedDesign, topic: job.topic,
+        audience: job.target_audience,
+        handle: profile?.instagram_handle ?? null,
         selectedAssetUrl, logoDataUri, proofAssetUrl: job.proof_asset_url ?? null,
         onCoverVisualFailure: async (reason) => {
           console.warn(`[retry-carousel] cover visual failed: ${reason}`)

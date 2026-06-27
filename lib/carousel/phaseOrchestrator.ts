@@ -12,6 +12,9 @@ import { buildIgCtaSlide, buildTtCtaSlide } from './ctaKit'
 import { STYLE_LIBRARY } from '@/lib/designSystem/styleLibrary'
 import type { ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSystem'
 import type { CarouselBeat } from './types'
+import { planCover } from './editorialPlan'
+import { provideEditorialAssets as defaultProvideEditorialAssets } from './assetProvider'
+import { composeCover } from './composeCover'
 
 // ── Strategy Engine: beat generation ───────────────────────────────────────
 // generateCarouselBeats now owns its own model strategy (gpt-5.4-mini primary,
@@ -127,6 +130,8 @@ export type CompileCarouselInput = {
   beats: CarouselBeat[]
   resolved: ResolvedDesignSystem
   topic: string
+  audience?: string | null          // feeds the subject prompt
+  handle?: string | null            // handle pill on the editorial cover
   selectedAssetUrl?: string | null
   logoDataUri?: string | null
   proofAssets?: Record<number, string>  // beat index → real uploaded image URL
@@ -148,8 +153,20 @@ async function fetchAsDataUri(url: string): Promise<string> {
   return `data:${ct};base64,${buf.toString('base64')}`
 }
 
-export async function compileCarousel(input: CompileCarouselInput): Promise<CompileCarouselResult> {
-  const { beats, resolved, topic, selectedAssetUrl, logoDataUri, proofAssets, proofAssetUrl, onCoverVisualFailure } = input
+// Injectable seams so the cover branch is unit-testable without network/image gen.
+export type CompileCarouselDeps = {
+  runVisualBatch: typeof runVisualBatch
+  fetchAsDataUri: (url: string) => Promise<string>
+  provideEditorialAssets: typeof defaultProvideEditorialAssets
+}
+const defaultCompileDeps: CompileCarouselDeps = {
+  runVisualBatch,
+  fetchAsDataUri,
+  provideEditorialAssets: defaultProvideEditorialAssets,
+}
+
+export async function compileCarousel(input: CompileCarouselInput, deps: CompileCarouselDeps = defaultCompileDeps): Promise<CompileCarouselResult> {
+  const { beats, resolved, topic, audience, handle, selectedAssetUrl, logoDataUri, proofAssets, proofAssetUrl, onCoverVisualFailure } = input
 
   // Auto-map proofAssetUrl → proofAssets on the first beat flagged as proof
   const resolvedProofAssets: Record<number, string> | undefined = (() => {
@@ -159,19 +176,18 @@ export async function compileCarousel(input: CompileCarouselInput): Promise<Comp
     return { ...(proofAssets ?? {}), [proofBeat.index]: proofAssetUrl }
   })()
 
-  // 1. Visual batch + proof substitution in parallel
+  // 1. Visual batch (body texture + legacy cover) + proof substitution in parallel
   const [visualBatch, processedBeats] = await Promise.all([
-    runVisualBatch(topic, resolved.style_id),
+    deps.runVisualBatch(topic, resolved.style_id),
     Promise.resolve(substituteProofUris(beats, resolvedProofAssets)),
   ])
 
-  // 2. Fetch cover + body texture as data-URIs (render lambda has no network egress)
+  // 2. Fetch legacy cover + body texture as data-URIs (render lambda has no egress)
   const [coverDataUri, textureDataUri] = await Promise.allSettled([
-    fetchAsDataUri(selectedAssetUrl || visualBatch.coverUrl).catch(async () => {
-      // Fall through to generated cover if selected asset fails
-      return fetchAsDataUri(visualBatch.coverUrl)
+    deps.fetchAsDataUri(selectedAssetUrl || visualBatch.coverUrl).catch(async () => {
+      return deps.fetchAsDataUri(visualBatch.coverUrl)
     }),
-    fetchAsDataUri(visualBatch.bodyTextureUrl),
+    deps.fetchAsDataUri(visualBatch.bodyTextureUrl),
   ]).then(([cover, tex]) => [
     cover.status === 'fulfilled' ? cover.value : (onCoverVisualFailure?.('cover fetch failed'), null),
     tex.status === 'fulfilled' ? tex.value : null,
@@ -181,8 +197,34 @@ export async function compileCarousel(input: CompileCarouselInput): Promise<Comp
   const ctaBeat = processedBeats.find(b => b.beat === 'cta')
   const bodyBeats = processedBeats.filter(b => b.beat !== 'cta')
 
-  // 4. Compile body beats → HTML (CSS Grid engine)
+  // 4. Editorial cover (Hero archetype). Plan is free; only spend on assets when a
+  // Hero plan exists. Use the layered cover only if a real α-cutout subject came
+  // back; otherwise fall through to the legacy buildFallbackSlide cover (fail-open).
+  // ponytail: legacy cover image from runVisualBatch is wasted when the editorial
+  // path wins (~$0.04); split runVisualBatch into texture-only + legacy-cover if cost matters.
+  let editorialCoverHtml: string | null = null
+  const coverBeat = bodyBeats.find(b => b.isCover)
+  if (coverBeat) {
+    const plan = planCover(coverBeat, resolved, { topic, audience, handle: handle ?? undefined })
+    if (plan) {
+      try {
+        const assets = await deps.provideEditorialAssets({ subjectPrompt: plan.subjectPrompt, bgPrompt: plan.bgPrompt })
+        if (assets.subject) {
+          let html = composeCover({ resolved, headline: plan.headline, assets, overlapBand: plan.overlapBand, handle: plan.handle })
+          if (logoDataUri) html = stampLogo(html, logoDataUri)
+          editorialCoverHtml = html
+        } else {
+          onCoverVisualFailure?.('editorial subject cutout unavailable — using legacy cover')
+        }
+      } catch (e) {
+        onCoverVisualFailure?.(`editorial cover failed: ${e instanceof Error ? e.message : e}`)
+      }
+    }
+  }
+
+  // 5. Compile body beats → HTML; the cover slot uses the editorial cover when present
   const bodyHtml = bodyBeats.map((beat, i) => {
+    if (i === 0 && editorialCoverHtml) return editorialCoverHtml
     let html = buildFallbackSlide(beat, resolved, {
       bodyTextureUri: i > 0 && textureDataUri ? textureDataUri : undefined,
     })
@@ -193,7 +235,7 @@ export async function compileCarousel(input: CompileCarouselInput): Promise<Comp
     return html
   })
 
-  // 5. Render CTA beat twice — IG + TikTok
+  // 6. Render CTA beat twice — IG + TikTok
   const igHtml = ctaBeat ? buildIgCtaSlide(ctaBeat) : null
   const ttHtml = ctaBeat ? buildTtCtaSlide(ctaBeat) : null
 
