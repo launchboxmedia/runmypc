@@ -15,6 +15,7 @@ import type { CarouselBeat } from './types'
 import { planCover } from './editorialPlan'
 import { provideEditorialAssets as defaultProvideEditorialAssets } from './assetProvider'
 import { composeCover } from './composeCover'
+import { resolveOverlapBand } from './coverResolver'
 
 // ── Strategy Engine: beat generation ───────────────────────────────────────
 // generateCarouselBeats now owns its own model strategy (gpt-5.4-mini primary,
@@ -214,7 +215,8 @@ export async function compileCarousel(input: CompileCarouselInput, deps: Compile
       if (plan) {
         const assets = await deps.provideEditorialAssets({ subjectPrompt: plan.subjectPrompt, bgPrompt: plan.bgPrompt })
         if (assets.subject) {
-          let html = composeCover({ resolved, headline: plan.headline, assets, overlapBand: plan.overlapBand, handle: plan.handle })
+          const overlapBand = plan.overlapBand ?? resolveOverlapBand(assets.subject)
+          let html = composeCover({ resolved, headline: plan.headline, assets, overlapBand, handle: plan.handle })
           if (logoDataUri) html = stampLogo(html, logoDataUri)
           editorialCoverHtml = html
         } else {
