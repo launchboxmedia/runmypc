@@ -32,9 +32,9 @@ describe('assetProvider.generateSubject', () => {
     const subject = await generateSubject('prompt', depsReturning(png))
     expect(subject).not.toBeNull()
     expect(subject!.hasAlpha).toBe(true)
-    expect(subject!.dataUri.startsWith('data:image/png;base64,')).toBe(true)
+    expect(subject!.dataUri.startsWith('data:image/webp;base64,')).toBe(true)
     expect(subject!.bbox.h).toBeGreaterThan(900)
-    expect(subject!.bbox.h).toBeLessThan(1350)
+    expect(subject!.bbox.h).toBeLessThanOrEqual(1350)
   })
 
   it('returns null when the model output has no real transparency (coverage ~1)', async () => {
@@ -56,7 +56,7 @@ describe('assetProvider.generateBackground', () => {
   it('returns a data-URI on success', async () => {
     const png = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: { r: 20, g: 20, b: 28 } } }).png().toBuffer()
     const bg = await generateBackground('prompt', depsReturning(png))
-    expect(bg!.startsWith('data:image/png;base64,')).toBe(true)
+    expect(bg!.startsWith('data:image/jpeg;base64,')).toBe(true)
   })
 
   it('returns null (fail-open) on throw', async () => {

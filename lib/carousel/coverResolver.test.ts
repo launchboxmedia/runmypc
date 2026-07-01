@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveOverlapBand } from './coverResolver'
+import { resolveOverlapBand, resolveCoverGeometry } from './coverResolver'
 import type { SubjectAsset } from './composeCover'
 
 const subj = (bbox: SubjectAsset['bbox']): SubjectAsset => ({
@@ -23,5 +23,26 @@ describe('resolveOverlapBand — cover geometry', () => {
 
   it('falls back to a blind 55% band when there is no subject', () => {
     expect(resolveOverlapBand(null)).toEqual({ topPct: 55, bottomPct: 100 })
+  })
+})
+
+describe('resolveCoverGeometry — 2D intrusion gate', () => {
+  it('keeps overlap layout when subject bbox stays clear of the vulnerable headline zone', () => {
+    // lowerSlice = 1250 + 100*0.78 = 1328 → band topPct clamp 92 → bandTopPx = 1242
+    // bbox.y (1250) >= bandTopPx (1242) → does not rise above the front band
+    expect(resolveCoverGeometry(subj({ x: 200, y: 1250, w: 680, h: 100 })))
+      .toEqual({ layoutMode: 'overlap', overlapBand: { topPct: 92, bottomPct: 100 } })
+  })
+
+  it('rejects overlap layout for a raised-arm bbox that crosses the headline column above the band', () => {
+    // lowerSlice = 150 + 1100*0.78 = 1008 → band topPct 75 → bandTopPx = 1012.5
+    // bbox.y (150) < bandTopPx and bbox spans x:400-900, inside the 72-1008 safe zone
+    expect(resolveCoverGeometry(subj({ x: 400, y: 150, w: 500, h: 1100 })))
+      .toEqual({ layoutMode: 'stacked', reason: 'headline_intrusion' })
+  })
+
+  it('falls back to the blind overlap band when there is no subject', () => {
+    expect(resolveCoverGeometry(null))
+      .toEqual({ layoutMode: 'overlap', overlapBand: { topPct: 55, bottomPct: 100 } })
   })
 })

@@ -10,6 +10,7 @@ import type { SubjectAsset, EditorialAssets } from './composeCover'
 
 const IMAGE_MODEL = 'gpt-image-1'
 const SUBJECT_SIZE = '1024x1536' as const // portrait; subject is object-fit:contain in-frame
+const FRAME_WIDTH = 1080
 const FRAME_HEIGHT = 1350
 
 export type AssetProviderDeps = {
@@ -73,14 +74,31 @@ export async function generateSubject(prompt: string, deps: AssetProviderDeps = 
     if (!meta.hasAlpha) return null
     const info = await alphaBBox(png)
     if (info.coverage < 0.03 || info.coverage > 0.97) return null
-    const scale = FRAME_HEIGHT / info.height
+
+    // Crop to the alpha bbox — most of the raw canvas is transparent padding;
+    // shipping it as base64 in the render-lambda payload is pure waste (413s).
+    // PNG is lossless-only; for photographic content with alpha that's still
+    // 3-4MB post-crop. WebP (lossy color, near-lossless alpha) cuts this ~5-8x
+    // and Chromium (the render lambda) decodes it natively.
+    const cropped = await sharp(png)
+      .extract({ left: info.bbox.x, top: info.bbox.y, width: info.bbox.w, height: info.bbox.h })
+      .webp({ quality: 82, alphaQuality: 100 })
+      .toBuffer()
+
+    // The crop changes the image's own aspect ratio, so the old
+    // scale-by-canvas-height mapping no longer holds. Recompute the frame bbox
+    // from how the cropped image actually renders under composeCover.ts's
+    // object-fit:contain;object-position:center bottom.
+    const scale = Math.min(FRAME_WIDTH / info.bbox.w, FRAME_HEIGHT / info.bbox.h)
+    const renderedW = info.bbox.w * scale
+    const renderedH = info.bbox.h * scale
     const bbox = {
-      x: Math.round(info.bbox.x * scale),
-      y: Math.round(info.bbox.y * scale),
-      w: Math.round(info.bbox.w * scale),
-      h: Math.round(info.bbox.h * scale),
+      x: Math.round((FRAME_WIDTH - renderedW) / 2),
+      y: Math.round(FRAME_HEIGHT - renderedH),
+      w: Math.round(renderedW),
+      h: Math.round(renderedH),
     }
-    return { dataUri: `data:image/png;base64,${png.toString('base64')}`, hasAlpha: true, bbox }
+    return { dataUri: `data:image/webp;base64,${cropped.toString('base64')}`, hasAlpha: true, bbox }
   } catch (e) {
     console.warn('[assetProvider] subject generation failed:', e instanceof Error ? e.message : e)
     return null
@@ -90,7 +108,10 @@ export async function generateSubject(prompt: string, deps: AssetProviderDeps = 
 export async function generateBackground(prompt: string, deps: AssetProviderDeps = defaultDeps): Promise<string | null> {
   try {
     const png = await deps.generateImage({ prompt, transparent: false })
-    return png ? `data:image/png;base64,${png.toString('base64')}` : null
+    if (!png) return null
+    // No alpha needed — JPEG is 5-10x smaller than PNG for photographic content.
+    const jpeg = await sharp(png).jpeg({ quality: 82 }).toBuffer()
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`
   } catch (e) {
     console.warn('[assetProvider] background generation failed:', e instanceof Error ? e.message : e)
     return null

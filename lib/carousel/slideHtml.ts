@@ -80,6 +80,8 @@ export function buildFallbackSlide(
   const isBodySlide = !beat.isCover
   const textureUri = isBodySlide ? (options?.bodyTextureUri ?? null) : null
   const isHero = beat.slideComponent === 'cover' || beat.slideComponent === 'cta'
+  const fc = style.font_constraints
+  const gbSvg = isBodySlide ? style.geometric_bg.svg.replaceAll('GEO_COLOR', fg) : ''
 
   // ── Layout rails ──────────────────────────────────────────────────────────
   // Luminance scrim: when the beat reads over a busy/dark background, clamp a
@@ -128,6 +130,7 @@ export function buildFallbackSlide(
 
   // GSAP animations (REQUIRED — Hyperframes seeks timeline frame-by-frame)
   const anims = [
+    isBodySlide ? `tl.fromTo("#geo-bg",{opacity:0,scale:1.04},{opacity:${style.geometric_bg.opacity},scale:1,duration:2,ease:"power1.out",transformOrigin:"center center"},0.1);` : '',
     `tl.fromTo("#title",{opacity:0,y:30},{opacity:1,y:0,duration:0.7},0.1);`,
     beat.subhead        ? `tl.fromTo("#subhead",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},0.5);`                 : '',
     beat.calloutBox     ? `tl.fromTo("#callout",{opacity:0,x:-20},{opacity:1,x:0,duration:0.5},0.7);`                : '',
@@ -169,6 +172,7 @@ export function buildFallbackSlide(
   } else {
     // Body slide: content in the safe-zone grid cell
     innerHtml = `
+${gbSvg}
 ${darkContrast ? '<div class="contrast-scrim"></div>' : ''}
 <div class="slide-content-area">
   ${titleEl}
@@ -280,12 +284,14 @@ ${textureUri ? `
 /* ── Typography ── */
 .slide-title{
   font-family:'${displayFont}',serif;
-  font-size:72px;font-weight:800;
-  color:${textColor};line-height:1.1;${titleShadow}
+  font-size:${fc.title_size}px;font-weight:${fc.title_weight};
+  color:${textColor};line-height:${fc.title_line_height};
+  letter-spacing:${fc.title_tracking};text-transform:${fc.title_transform};
+  ${titleShadow}
 }
 .hero-text{
-  font-size:clamp(70px,9vw,130px);
-  line-height:0.9;
+  font-size:${fc.title_hero_size};
+  line-height:${fc.title_hero_line_height};
 }
 .highlight{
   background:${accent}40;
@@ -294,20 +300,20 @@ ${textureUri ? `
 }
 .slide-subhead{
   font-family:'${bodyFont}',sans-serif;
-  font-size:38px;color:${textColor};line-height:1.4;
+  font-size:${fc.subhead_size}px;color:${textColor};line-height:${fc.subhead_line_height};
 }
 .slide-bullets,.slide-checklist{list-style:none;padding:0;margin-top:8px;}
 .slide-bullets li,.slide-checklist li{
   font-family:'${bodyFont}',sans-serif;
-  font-size:34px;color:${textColor};
+  font-size:${fc.body_size}px;color:${textColor};line-height:${fc.body_line_height};
   padding:8px 0;border-bottom:1px solid ${accent}33;
 }
 .slide-callout{
   border-left:6px solid ${accent};padding:20px 28px;
-  font-family:'${bodyFont}',sans-serif;font-size:38px;color:${textColor};
+  font-family:'${bodyFont}',sans-serif;font-size:${fc.subhead_size}px;color:${textColor};
 }
 .slide-anchor{
-  font-family:'${bodyFont}',sans-serif;font-size:32px;color:${accent};
+  font-family:'${bodyFont}',sans-serif;font-size:${Math.round(fc.body_size * 0.92)}px;color:${accent};
 }
 /* ── Social proof frame ── */
 .premium-proof-frame{

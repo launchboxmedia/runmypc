@@ -62,6 +62,10 @@ export type ComposeCoverInput = {
   // subject's bbox — the painter does NOT compute geometry. If omitted, the
   // painter falls back to a blind 55% constant (no bbox math here).
   overlapBand?: { topPct: number; bottomPct: number }
+  // 'stacked' = coverResolver rejected the overlap layout (subject bbox intrudes
+  // the headline zone). Headline and subject render in disjoint zones instead —
+  // no clip-path math, just two non-overlapping boxes. Default 'overlap'.
+  layoutMode?: 'overlap' | 'stacked'
   handle?: string
 }
 
@@ -102,6 +106,7 @@ export function composeCover(input: ComposeCoverInput): string {
 
   const hasBg = Boolean(assets.background)
   const hasSubject = Boolean(assets.subject)
+  const stacked = input.layoutMode === 'stacked' && hasSubject
   const band = input.overlapBand ?? { topPct: 55, bottomPct: 100 }
   const insetTop = Math.max(0, Math.min(100, band.topPct))
   const insetBottom = Math.max(0, Math.min(100, 100 - band.bottomPct))
@@ -115,13 +120,24 @@ export function composeCover(input: ComposeCoverInput): string {
     (hasBg ? `<img id="cover-bg" src="${assets.background}" alt="" />` : ``) +
     `</div>`
 
-  const typeBack = `<div class="layer headline-layer" id="type-back" style="z-index:1;opacity:0">${hl}</div>`
+  // Stacked: headline and subject occupy disjoint zones — structurally cannot
+  // overlap regardless of what the bbox says, so no clip-path / front-copy needed.
+  const headlineZone = stacked
+    ? `<div class="layer headline-zone headline-layer" id="type-back" style="z-index:2;opacity:0">${hl}</div>`
+    : ''
+  const subjectZone = stacked
+    ? `<div class="layer subject-zone" id="layer-subject" style="z-index:1;opacity:0"><img id="subject" src="${assets.subject!.dataUri}" alt="" /></div>`
+    : ''
+
+  const typeBack = !stacked
+    ? `<div class="layer headline-layer" id="type-back" style="z-index:1;opacity:0">${hl}</div>`
+    : ''
 
   // Subject + front type copy only exist when there's something to occlude.
-  const subjectLayer = hasSubject
+  const subjectLayer = hasSubject && !stacked
     ? `<div class="layer" id="layer-subject" style="z-index:2;opacity:0"><img id="subject" src="${assets.subject!.dataUri}" alt="" /></div>`
     : ''
-  const typeFront = hasSubject
+  const typeFront = hasSubject && !stacked
     ? `<div class="layer headline-layer" id="type-front" style="z-index:3;opacity:0">${hl}</div>`
     : ''
 
@@ -136,7 +152,7 @@ export function composeCover(input: ComposeCoverInput): string {
     hasBg ? `tl.fromTo("#cover-bg",{scale:1.06},{scale:1,duration:${SLIDE_DURATION},ease:"none"},0);` : '',
     `tl.fromTo("#type-back",{opacity:0,y:34},{opacity:1,y:0,duration:0.7,ease:"power3.out"},0.1);`,
     hasSubject ? `tl.fromTo("#layer-subject",{opacity:0,y:28},{opacity:1,y:0,duration:0.7,ease:"power3.out"},0.35);` : '',
-    hasSubject ? `tl.fromTo("#type-front",{opacity:0},{opacity:1,duration:0.5},0.65);` : '',
+    hasSubject && !stacked ? `tl.fromTo("#type-front",{opacity:0},{opacity:1,duration:0.5},0.65);` : '',
     `tl.fromTo("#layer-badges",{opacity:0},{opacity:1,duration:0.4},1.0);`,
     `tl.to("#${COMPOSITION_ID}",{opacity:1,duration:0.01},${SLIDE_DURATION});`,
   ]
@@ -162,6 +178,10 @@ html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
 .headline-layer{display:flex;flex-direction:column;justify-content:flex-start;padding:96px 72px 0}
 /* The front copy reads OVER the subject only inside the overlap band */
 #type-front{clip-path:inset(${insetTop}% 0 ${insetBottom}% 0)}
+/* Stacked fallback: headline/subject in disjoint zones, no occlusion possible */
+.headline-zone{inset:0;height:55%;overflow:hidden}
+.subject-zone{top:55%;left:0;right:0;bottom:0;overflow:hidden}
+.subject-zone img{width:100%;height:100%;object-fit:contain;object-position:center bottom;display:block}
 .tok{
   font-family:'${displayFont}',sans-serif;
   display:inline-block;color:${fg};
@@ -196,6 +216,8 @@ html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
   data-duration="${SLIDE_DURATION}"
   data-root="true">
   ${bgLayer}
+  ${subjectZone}
+  ${headlineZone}
   ${typeBack}
   ${subjectLayer}
   ${typeFront}

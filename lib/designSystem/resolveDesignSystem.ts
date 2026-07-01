@@ -110,8 +110,9 @@ export async function resolveDesignSystem(
   const primary = job.primary_color || profile?.primary_color || null
   const palette: Palette = primary ? derivePalette(style_id, primary) : STYLE_LIBRARY[style_id].implied_tone
 
-  // Split-image flag
-  const split_image_cover = (job.split_image_cover ?? profile?.split_image_cover ?? false) === true
+  // Split-image flag — style preset is the fallback; job/profile can still override
+  const styleDefault = STYLE_LIBRARY[style_id].default_split_cover
+  const split_image_cover = (job.split_image_cover ?? profile?.split_image_cover ?? styleDefault) === true
 
   return {
     style_id,
