@@ -6,9 +6,20 @@
 // type-only / legacy cover rather than blocking the carousel.
 import OpenAI from 'openai'
 import sharp from 'sharp'
+import { generateImage as atlasGenerateImage } from '@/lib/atlascloud'
 import type { SubjectAsset, EditorialAssets } from './composeCover'
 
 const IMAGE_MODEL = 'gpt-image-1'
+// SYSTEM INVARIANT — do not "optimize" this away: Atlas Cloud is ~50% cheaper
+// than direct OpenAI, but its gpt-image-2 routes (both plain and -developer)
+// reject/silently drop background:'transparent' (verified against the live
+// API 2026-07-02 — one call returned an explicit 400, the other silently
+// returned a 3-channel opaque PNG). Alpha-cutout generation (generateSubject)
+// MUST stay on direct OpenAI gpt-image-1. Only opaque generation
+// (generateBackground) may route through Atlas Cloud. Routing decision lives
+// in the `transparent` branch below — do not add a code path that sends
+// transparent:true through Atlas.
+const ATLAS_IMAGE_MODEL = 'openai/gpt-image-2-developer/text-to-image'
 const SUBJECT_SIZE = '1024x1536' as const // portrait; subject is object-fit:contain in-frame
 const FRAME_WIDTH = 1080
 const FRAME_HEIGHT = 1350
@@ -25,13 +36,19 @@ function openai(): OpenAI {
 
 const defaultDeps: AssetProviderDeps = {
   async generateImage({ prompt, transparent }) {
+    if (!transparent) {
+      const { url } = await atlasGenerateImage({ prompt, model: ATLAS_IMAGE_MODEL, size: SUBJECT_SIZE })
+      const res = await fetch(url)
+      if (!res.ok) return null
+      return Buffer.from(await res.arrayBuffer())
+    }
     const res = await openai().images.generate({
       model: IMAGE_MODEL,
       prompt,
       size: SUBJECT_SIZE,
       quality: 'medium',
       n: 1,
-      ...(transparent ? { background: 'transparent' as const } : {}),
+      background: 'transparent' as const,
     })
     const b64 = res.data?.[0]?.b64_json
     return b64 ? Buffer.from(b64, 'base64') : null

@@ -110,7 +110,8 @@ export async function generateImage(params: {
 }): Promise<{ url: string }> {
   const {
     prompt,
-    model = 'openai/gpt-image-2/text-to-image'
+    model = 'openai/gpt-image-2/text-to-image',
+    size
   } = params
 
   const res = await fetch(`${ATLAS_BASE_URL}/model/generateImage`, {
@@ -121,7 +122,8 @@ export async function generateImage(params: {
     },
     body: JSON.stringify({
       model,
-      prompt
+      prompt,
+      ...(size && { size })
     })
   })
 
