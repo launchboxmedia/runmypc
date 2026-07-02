@@ -14,8 +14,7 @@ import type { ResolvedDesignSystem } from '@/lib/designSystem/resolveDesignSyste
 import type { CarouselBeat } from './types'
 import { planCover } from './editorialPlan'
 import { provideEditorialAssets as defaultProvideEditorialAssets } from './assetProvider'
-import { composeCover } from './composeCover'
-import { resolveCoverGeometry } from './coverResolver'
+import { getArchetypeModule } from './archetypes/registry'
 
 // ── Strategy Engine: beat generation ───────────────────────────────────────
 // generateCarouselBeats now owns its own model strategy (gpt-5.4-mini primary,
@@ -213,19 +212,17 @@ export async function compileCarousel(input: CompileCarouselInput, deps: Compile
     try {
       const plan = planCover(bodyBeats[coverBeatIndex], resolved, { topic, audience, handle: handle ?? undefined })
       if (plan) {
-        const assets = await deps.provideEditorialAssets({ subjectPrompt: plan.subjectPrompt, bgPrompt: plan.bgPrompt })
-        if (assets.subject) {
-          const geometry = plan.overlapBand
-            ? ({ layoutMode: 'overlap', overlapBand: plan.overlapBand } as const)
-            : resolveCoverGeometry(assets.subject)
-          if (geometry.layoutMode === 'stacked') {
-            onCoverVisualFailure?.(`stacked-layout-used: ${geometry.reason}`)
+        const mod = getArchetypeModule(plan.archetype)
+        if (mod) {
+          const assets = await deps.provideEditorialAssets({ subjectPrompt: plan.subjectPrompt, bgPrompt: plan.bgPrompt })
+          const canRender = mod.canRender ? mod.canRender(assets) : true
+          if (canRender) {
+            let html = mod.layout({ resolved, headline: plan.headline, assets, overlapBand: plan.overlapBand, handle: plan.handle })
+            if (logoDataUri) html = stampLogo(html, logoDataUri)
+            editorialCoverHtml = html
+          } else {
+            onCoverVisualFailure?.('editorial subject cutout unavailable — using legacy cover')
           }
-          let html = composeCover({ resolved, headline: plan.headline, assets, ...geometry, handle: plan.handle })
-          if (logoDataUri) html = stampLogo(html, logoDataUri)
-          editorialCoverHtml = html
-        } else {
-          onCoverVisualFailure?.('editorial subject cutout unavailable — using legacy cover')
         }
       }
     } catch (e) {

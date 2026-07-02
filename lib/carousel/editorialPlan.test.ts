@@ -42,8 +42,14 @@ describe('planCover', () => {
     expect(plan!.bgPrompt).toMatch(/no people|text-free/i)
   })
 
-  it('returns null for styles not yet migrated to an archetype (v1)', () => {
-    expect(planCover(cover(), resolved('premium_editorial'), ctx)).toBeNull()
+  it('returns a Magazine plan for premium_editorial covers', () => {
+    const plan = planCover(cover(), resolved('premium_editorial'), ctx)
+    expect(plan).not.toBeNull()
+    expect(plan!.archetype).toBe('magazine')
+    expect(plan!.headline.map(t => t.text)).toEqual(['Stop', 'Creating', 'Carousels'])
+  })
+
+  it('returns null for styles not yet migrated to an archetype', () => {
     expect(planCover(cover(), resolved('clean_direct'), ctx)).toBeNull()
   })
 
