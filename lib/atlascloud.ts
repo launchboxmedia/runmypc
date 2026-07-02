@@ -1,5 +1,13 @@
 const ATLAS_BASE_URL = 'https://api.atlascloud.ai/api/v1'
-const ATLAS_API_KEY = process.env.ATLASCLOUD_API_KEY!
+// Lazy, not a module-level const: this file is imported statically by some
+// callers (e.g. assetProvider.ts) whose consumers load .env.local via a
+// runtime dotenv.config() call rather than relying on Next.js's built-in env
+// loading (test files, one-off scripts). A module-level const captures
+// process.env at import time, before that config() call runs, silently
+// baking in `undefined` and sending `Authorization: Bearer undefined`.
+function atlasApiKey(): string {
+  return process.env.ATLASCLOUD_API_KEY!
+}
 
 type GenerationStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
@@ -21,7 +29,7 @@ export async function uploadMedia(imageUrl: string): Promise<string> {
 
   const uploadRes = await fetch(`${ATLAS_BASE_URL}/model/uploadMedia`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` },
+    headers: { 'Authorization': `Bearer ${atlasApiKey()}` },
     body: formData
   })
 
@@ -58,7 +66,7 @@ export async function generateVideo(params: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ATLAS_API_KEY}`
+      'Authorization': `Bearer ${atlasApiKey()}`
     },
     body: JSON.stringify({
       model,
@@ -83,7 +91,7 @@ export async function generateVideo(params: {
     await new Promise(resolve => setTimeout(resolve, 5000))
 
     const statusRes = await fetch(`${ATLAS_BASE_URL}/model/prediction/${predictionId}`, {
-      headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${atlasApiKey()}` }
     })
 
     const result = await statusRes.json()
@@ -118,7 +126,7 @@ export async function generateImage(params: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ATLAS_API_KEY}`
+      'Authorization': `Bearer ${atlasApiKey()}`
     },
     body: JSON.stringify({
       model,
@@ -143,7 +151,7 @@ export async function generateImage(params: {
     await new Promise(resolve => setTimeout(resolve, 2000))
 
     const statusRes = await fetch(`${ATLAS_BASE_URL}/model/prediction/${predictionId}`, {
-      headers: { 'Authorization': `Bearer ${ATLAS_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${atlasApiKey()}` }
     })
 
     const result = await statusRes.json()
