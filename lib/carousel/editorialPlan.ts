@@ -56,17 +56,21 @@ export function planCover(
   const personal = PERSONAL_RE.test(ctx.audience || '')
 
   const subjectPrompt = [
-    `Full-body studio photograph of a single person for a social media cover about "${ctx.topic}".`,
+    'Photograph containing absolutely no text, letters, words, captions, or logos anywhere in frame.',
+    `Full-body studio photograph of a single person for a social media cover about ${ctx.topic}.`,
     personal
       ? 'Relatable everyday person, direct eye contact, genuine emotional expression.'
       : 'Confident expert, direct eye contact.',
     `Pose/gesture in the spirit of: ${style.hook_technique}.`,
-    'Isolated subject only, completely transparent background, no text, no words, no logos, sharp clean cut-out edges, cinematic rim lighting, centered, head to knees visible.',
+    'Restrained editorial pose: arms close to the body or crossed, hands resting near pockets or clothing, calm vertical silhouette.',
+    'Avoid stop gestures, pointing, hands reaching toward the camera, or any raised arm/limb crossing the upper body or face.',
+    'Isolated subject only, completely transparent background, sharp clean cut-out edges, cinematic rim lighting, centered, head to knees visible.',
   ].join(' ')
 
   const bgPrompt = [
-    `Moody atmospheric editorial backdrop for a cover about "${ctx.topic}".`,
-    'Abstract, text-free, no people, no objects, cinematic, soft vignette, dark tones with a subtle warm rim glow, portrait orientation.',
+    'Image containing absolutely no text, letters, words, captions, or logos anywhere in frame.',
+    `Moody atmospheric editorial backdrop for a cover about ${ctx.topic}.`,
+    'Abstract, no people, no objects, cinematic, soft vignette, dark tones with a subtle warm rim glow, portrait orientation.',
   ].join(' ')
 
   return {

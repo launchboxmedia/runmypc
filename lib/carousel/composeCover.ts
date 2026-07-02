@@ -185,14 +185,14 @@ html,body{width:1080px;height:1350px;overflow:hidden;background:${bg}}
 .tok{
   font-family:'${displayFont}',sans-serif;
   display:inline-block;color:${fg};
-  font-weight:${fc.title_weight};
-  letter-spacing:${fc.title_tracking};
-  line-height:${fc.title_hero_line_height};
+  font-weight:900;
+  letter-spacing:-0.02em;
+  line-height:0.9;
   text-transform:${fc.title_transform};
   text-shadow:0 2px 18px rgba(0,0,0,0.45);
 }
-.tok-xl{font-size:${fc.title_hero_size}}
-.tok-lg{font-size:${fc.title_size}px}
+.tok-xl{font-size:calc(${fc.title_hero_size} * 1.15)}
+.tok-lg{font-size:${Math.round(fc.title_size * 1.15)}px}
 .tok-md{font-size:${Math.round(fc.title_size * 0.62)}px}
 .tok-accent{color:${accent}}
 .handle-pill{

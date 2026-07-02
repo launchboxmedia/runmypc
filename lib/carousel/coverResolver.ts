@@ -11,46 +11,38 @@ import type { SubjectAsset } from './composeCover'
 
 // Only the lower slice of the figure carries type in front — the rest occludes
 // the headline (the type-behind-subject effect). Spanning the whole figure would
-// erase that effect. Bias to the bottom ~20% of the subject.
+// erase that effect. Band starts at ~35% down the subject (not lower — headline
+// blocks are short and never reach past the subject's midsection; a lower band
+// has nothing to cross in front of).
 export function resolveOverlapBand(
   subject: SubjectAsset | null
 ): { topPct: number; bottomPct: number } {
   if (!subject) return { topPct: 55, bottomPct: 100 }
-  const lowerSlice = subject.bbox.y + subject.bbox.h * 0.78
+  const lowerSlice = subject.bbox.y + subject.bbox.h * 0.35
   const topPct = Math.max(0, Math.min(92, Math.round((lowerSlice / 1350) * 100)))
   return { topPct, bottomPct: 100 }
 }
 
-// Band above only covers vertical occlusion. A subject whose bbox reaches into
-// the headline's x-range while rising above the band (raised arm, etc.) still
-// paints over the headline unopposed — type-back is behind the subject there.
-// ponytail: 72px/96px mirror composeCover's .headline-layer padding + slideHtml's
-// grid gutters, duplicated rather than imported — same pattern already used
-// between those two files, not worth a shared constants module for two numbers.
-const HEADLINE_SAFE_X = { left: 72, right: 1008 } // 1080 - 72
-
-function intrudesHeadline(subject: SubjectAsset, band: { topPct: number }): boolean {
-  const { x, y, w } = subject.bbox
-  const horizontalOverlap = x < HEADLINE_SAFE_X.right && x + w > HEADLINE_SAFE_X.left
-  const risesAboveFrontBand = y < (band.topPct / 100) * 1350
-  return horizontalOverlap && risesAboveFrontBand
+function hasValidBbox(subject: SubjectAsset): boolean {
+  const { x, y, w, h } = subject.bbox
+  return [x, y, w, h].every(Number.isFinite) && w > 0 && h > 0
 }
 
-// Only 'headline_intrusion' is emitted today (the only check implemented).
-// The others are reserved so future checks (e.g. an oversized-subject guard)
-// can slot into the same union without another renderer-facing type change.
-export type StackedReason = 'headline_intrusion' | 'subject_too_large' | 'subject_missing' | 'low_confidence'
+// Only 'invalid_bbox' is emitted today (the only check implemented). The
+// others are reserved so future checks (e.g. an oversized-subject guard) can
+// slot into the same union without another renderer-facing type change.
+export type StackedReason = 'subject_too_large' | 'subject_missing' | 'low_confidence' | 'invalid_bbox'
 
 export type CoverGeometry =
   | { layoutMode: 'overlap'; overlapBand: { topPct: number; bottomPct: number } }
   | { layoutMode: 'stacked'; reason: StackedReason }
 
-// No heuristic repositioning on intrusion — just reject the overlap layout and
-// signal a structurally safe fallback (headline/subject in disjoint zones).
+// Overlap is the default editorial composition for any subject with a usable
+// bbox. Stacked is an emergency fallback, not a normal-case gate.
 export function resolveCoverGeometry(subject: SubjectAsset | null): CoverGeometry {
-  const overlapBand = resolveOverlapBand(subject)
-  if (subject && intrudesHeadline(subject, overlapBand)) {
-    return { layoutMode: 'stacked', reason: 'headline_intrusion' }
-  }
-  return { layoutMode: 'overlap', overlapBand }
+  const geometry: CoverGeometry =
+    subject && !hasValidBbox(subject)
+      ? { layoutMode: 'stacked', reason: 'invalid_bbox' }
+      : { layoutMode: 'overlap', overlapBand: resolveOverlapBand(subject) }
+  return geometry
 }
